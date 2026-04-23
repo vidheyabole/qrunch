@@ -470,4 +470,5 @@ When ready, migrate to **React Native + Expo**. Since the frontend is already in
 
 Built by QRunch
 Project: **QRunch**
-Targeting 🇮🇳 India & 🇺🇸 USA markets
+Targeting 🇮🇳 India & 🇺🇸 USA markets#   q r u n c h  
+ 
