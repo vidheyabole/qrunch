@@ -1,274 +1,321 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/useAuth';
-import { getInventory, addInventoryItem, updateInventoryItem, deleteInventoryItem } from '../../api/inventoryApi';
-import { exportToCSV } from '../../utils/csvExport';
-import toast from 'react-hot-toast';
 
-const UNITS = [
-  { group: 'Weight',  units: ['kg', 'grams', 'lbs', 'oz'] },
-  { group: 'Volume',  units: ['litre', 'ml', 'bottles', 'gallons'] },
-  { group: 'Count',   units: ['pieces', 'dozens', 'boxes', 'packets', 'bags', 'cans'] },
-];
-
-const INIT = { name: '', quantity: '', unit: '', lowStockThreshold: '5' };
+const UNITS = ['kg', 'g', 'lbs', 'oz', 'litre', 'ml', 'bottles', 'cans', 'packets', 'pieces', 'dozen', 'bags'];
 
 export default function InventoryPage() {
-  const { currentRestaurant } = useAuth();
+  const { owner, currentRestaurant } = useAuth();
   const { t } = useTranslation();
-  const token = localStorage.getItem('qrunch_token');
 
-  const [items, setItems]         = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [filter, setFilter]       = useState('all');
-  const [showModal, setShowModal] = useState(false);
-  const [editItem, setEditItem]   = useState(null);
-  const [form, setForm]           = useState(INIT);
-  const [saving, setSaving]       = useState(false);
+  const restaurantId  = currentRestaurant?._id;
+  const currency = owner?.region === 'india' ? '₹' : '$';
+  const getAuthHeader = () => ({ Authorization: `Bearer ${owner?.token}` });
 
-  useEffect(() => {
-    if (!currentRestaurant?._id) return;
+  const [items,      setItems]      = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [filter,     setFilter]     = useState('all');
+  const [showModal,  setShowModal]  = useState(false);
+  const [editItem,   setEditItem]   = useState(null);
+  const [saving,     setSaving]     = useState(false);
+  const [bulkMode,   setBulkMode]   = useState(false);
+  const [bulkEdits,  setBulkEdits]  = useState({});
+  const [savingBulk, setSavingBulk] = useState(false);
+
+  const [itemName,   setItemName]   = useState('');
+  const [quantity,   setQuantity]   = useState('');
+  const [unit,       setUnit]       = useState('kg');
+  const [customUnit, setCustomUnit] = useState('');
+  const [threshold,  setThreshold]  = useState(5);
+
+  const loadItems = useCallback(async () => {
+    if (!restaurantId) return;
     setLoading(true);
-    getInventory(currentRestaurant._id, token)
-      .then(setItems)
-      .catch(() => toast.error('Failed to load inventory'))
-      .finally(() => setLoading(false));
-  }, [currentRestaurant?._id]);
+    const res  = await fetch(`/api/inventory/${restaurantId}`, { headers: getAuthHeader() });
+    const data = await res.json();
+    setItems(Array.isArray(data) ? data : []);
+    setLoading(false);
+  }, [restaurantId, owner?.token]);
 
-  const getStatus = (item) => {
-    if (item.quantity === 0) return 'out';
-    if (item.quantity <= item.lowStockThreshold) return 'low';
-    return 'ok';
-  };
+  useEffect(() => { loadItems(); }, [loadItems]);
 
-  const filtered = items.filter(i => {
-    if (filter === 'low') return getStatus(i) === 'low';
-    if (filter === 'out') return getStatus(i) === 'out';
+  const filteredItems = items.filter(item => {
+    if (filter === 'out') return item.quantity === 0;
+    if (filter === 'low') return item.quantity > 0 && item.quantity <= item.lowStockThreshold;
     return true;
   });
 
-  const lowCount = items.filter(i => getStatus(i) === 'low').length;
-  const outCount = items.filter(i => getStatus(i) === 'out').length;
+  const resetForm = () => {
+    setItemName(''); setQuantity(''); setUnit('kg'); setCustomUnit(''); setThreshold(5);
+  };
 
-  const openAdd  = () => { setEditItem(null); setForm(INIT); setShowModal(true); };
+  const openAdd  = () => { resetForm(); setEditItem(null); setShowModal(true); };
   const openEdit = (item) => {
     setEditItem(item);
-    setForm({ name: item.name, quantity: item.quantity.toString(), unit: item.unit, lowStockThreshold: item.lowStockThreshold.toString() });
+    setItemName(item.name);
+    setQuantity(item.quantity.toString());
+    const knownUnit = UNITS.includes(item.unit);
+    setUnit(knownUnit ? item.unit : 'custom');
+    setCustomUnit(knownUnit ? '' : item.unit);
+    setThreshold(item.lowStockThreshold ?? 5);
     setShowModal(true);
   };
 
-  const handleSave = async e => {
+  const finalUnit = unit === 'custom' ? customUnit : unit;
+
+  const saveItem = async (e) => {
     e.preventDefault();
-    if (!form.name.trim())    return toast.error('Item name is required');
-    if (!form.unit.trim())    return toast.error('Unit is required');
-    if (form.quantity === '' || isNaN(Number(form.quantity)) || Number(form.quantity) < 0)
-      return toast.error('Valid quantity required');
+    if (!itemName.trim() || quantity === '' || !finalUnit) return;
     setSaving(true);
-    try {
-      if (editItem) {
-        const updated = await updateInventoryItem(editItem._id, { name: form.name, quantity: form.quantity, unit: form.unit, lowStockThreshold: form.lowStockThreshold }, token);
-        setItems(prev => prev.map(i => i._id === updated._id ? updated : i));
-        toast.success('Item updated');
-      } else {
-        const newItem = await addInventoryItem({ restaurantId: currentRestaurant._id, name: form.name, quantity: form.quantity, unit: form.unit, lowStockThreshold: form.lowStockThreshold }, token);
-        setItems(prev => [...prev, newItem].sort((a, b) => a.name.localeCompare(b.name)));
-        toast.success('Item added');
-      }
-      setShowModal(false);
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed to save item'); }
-    finally { setSaving(false); }
+    const body = {
+      name:              itemName,
+      quantity:          parseFloat(quantity),
+      unit:              finalUnit,
+      lowStockThreshold: parseFloat(threshold),
+      restaurantId:      restaurantId
+    };
+    const url    = editItem ? `/api/inventory/${editItem._id}` : '/api/inventory';
+    const method = editItem ? 'PUT' : 'POST';
+    await fetch(url, {
+      method,
+      headers: { ...getAuthHeader(), 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body)
+    });
+    setSaving(false);
+    setShowModal(false);
+    loadItems();
   };
 
-  const handleDelete = async (item) => {
-    if (!window.confirm(`Delete "${item.name}" from inventory?`)) return;
-    try {
-      await deleteInventoryItem(item._id, token);
-      setItems(prev => prev.filter(i => i._id !== item._id));
-      toast.success('Item deleted');
-    } catch { toast.error('Failed to delete item'); }
+  const deleteItem = async (id) => {
+    if (!confirm('Delete this inventory item?')) return;
+    await fetch(`/api/inventory/${id}`, { method: 'DELETE', headers: getAuthHeader() });
+    loadItems();
   };
 
-  const handleExport = () => {
-    if (items.length === 0) return toast.error('No inventory items to export');
-    exportToCSV(
-      `${currentRestaurant.name} - Inventory`,
-      ['Item Name', 'Quantity', 'Unit', 'Low Stock Threshold', 'Status'],
-      items.map(i => [i.name, i.quantity, i.unit, i.lowStockThreshold,
-        getStatus(i) === 'out' ? t('inventory.outOfStock') : getStatus(i) === 'low' ? t('inventory.lowStock') : t('inventory.inStock')
-      ])
+  const startBulk = () => {
+    const edits = {};
+    items.forEach(i => { edits[i._id] = { quantity: i.quantity, lowStockThreshold: i.lowStockThreshold }; });
+    setBulkEdits(edits);
+    setBulkMode(true);
+  };
+
+  const saveBulk = async () => {
+    setSavingBulk(true);
+    await Promise.all(
+      Object.entries(bulkEdits).map(([id, vals]) =>
+        fetch(`/api/inventory/${id}`, {
+          method:  'PUT',
+          headers: { ...getAuthHeader(), 'Content-Type': 'application/json' },
+          body:    JSON.stringify(vals)
+        })
+      )
     );
-    toast.success('Inventory exported!');
+    setSavingBulk(false);
+    setBulkMode(false);
+    loadItems();
   };
 
-  if (!currentRestaurant) return (
-    <div className="flex items-center justify-center h-64 text-gray-400">No restaurant selected</div>
-  );
+  const exportCSV = () => {
+    const header = 'Name,Quantity,Unit,Low Stock Threshold,Status\n';
+    const rows   = items.map(i => {
+      const status = i.quantity === 0 ? 'Out of Stock'
+        : i.quantity <= i.lowStockThreshold ? 'Low Stock' : 'In Stock';
+      return `"${i.name}",${i.quantity},${i.unit},${i.lowStockThreshold},${status}`;
+    }).join('\n');
+    const blob = new Blob([header + rows], { type: 'text/csv' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `inventory-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const getStockStatus = (item) => {
+    if (item.quantity === 0) return { label: t('inventory.outOfStock'), color: 'text-red-500 bg-red-50 dark:bg-red-900/20' };
+    if (item.quantity <= item.lowStockThreshold) return { label: t('inventory.lowStock'), color: 'text-yellow-500 bg-yellow-50 dark:bg-yellow-900/20' };
+    return { label: t('inventory.inStock'), color: 'text-green-600 bg-green-50 dark:bg-green-900/20' };
+  };
 
   return (
-    <div>
-      <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">{t('inventory.title')}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{currentRestaurant.name}</p>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={handleExport}
-            className="flex items-center gap-2 border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 text-sm px-4 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition font-medium">
-            📥 {t('common.exportCSV')}
-          </button>
-          <button onClick={openAdd}
-            className="bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition">
-            {t('inventory.addItem')}
-          </button>
+    <div className="p-4 md:p-6 max-w-4xl mx-auto">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">{t('inventory.title')}</h1>
+        <div className="flex gap-2 flex-wrap">
+          {bulkMode ? (
+            <>
+              <button onClick={() => setBulkMode(false)}
+                className="border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 px-3 py-2 rounded-xl text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition">
+                {t('inventory.cancelBulk')}
+              </button>
+              <button onClick={saveBulk} disabled={savingBulk}
+                className="bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white font-semibold px-4 py-2 rounded-xl text-sm transition">
+                {savingBulk ? t('common.loading') : t('inventory.saveAll')}
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={exportCSV}
+                className="border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 px-3 py-2 rounded-xl text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition">
+                📥 {t('common.exportCSV')}
+              </button>
+              <button onClick={startBulk}
+                className="border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 px-3 py-2 rounded-xl text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition">
+                {t('inventory.bulkEdit')}
+              </button>
+              <button onClick={openAdd}
+                className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-4 py-2 rounded-xl text-sm transition">
+                {t('inventory.addItem')}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {outCount > 0 && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 mb-3 flex items-center gap-2">
-          <span>❌</span>
-          <p className="text-sm text-red-600 dark:text-red-400 font-medium">
-            {outCount} {t('inventory.outStockMsg')}
-          </p>
-        </div>
-      )}
-      {lowCount > 0 && (
-        <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl p-3 mb-4 flex items-center gap-2">
-          <span>⚠️</span>
-          <p className="text-sm text-orange-600 dark:text-orange-400 font-medium">
-            {lowCount} {t('inventory.lowStockMsg')}
-          </p>
-        </div>
-      )}
+      <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">{t('inventory.helpText')}</p>
 
-      <div className="flex gap-2 mb-5 overflow-x-auto pb-1">
+      <div className="flex gap-2 mb-5">
         {[
-          { key: 'all', label: t('inventory.allItems'),   count: items.length },
-          { key: 'low', label: t('inventory.lowStock'),   count: lowCount },
-          { key: 'out', label: t('inventory.outOfStock'), count: outCount },
-        ].map(tab => (
-          <button key={tab.key} onClick={() => setFilter(tab.key)}
-            className={`shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition ${
-              filter === tab.key ? 'bg-orange-500 text-white shadow-md' : 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'
-            }`}>
-            {tab.label}
-            {tab.count > 0 && (
-              <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${filter === tab.key ? 'bg-white/20 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'}`}>{tab.count}</span>
-            )}
+          { key: 'all', label: t('inventory.allItems') },
+          { key: 'low', label: `⚠️ ${t('inventory.lowStock')}` },
+          { key: 'out', label: `🚫 ${t('inventory.outOfStock')}` },
+        ].map(f => (
+          <button key={f.key} onClick={() => setFilter(f.key)}
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition
+              ${filter === f.key
+                ? 'bg-orange-500 text-white'
+                : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
+            {f.label}
           </button>
         ))}
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center h-64">
-          <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
+        <div className="flex justify-center py-16 text-gray-400">
+          <span className="animate-spin text-2xl">⏳</span>
         </div>
-      ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-gray-400 dark:text-gray-600 gap-3">
-          <span className="text-6xl">📦</span>
-          <p className="text-sm">{items.length === 0 ? 'No inventory items yet — add your first item!' : 'No items in this filter'}</p>
-          {items.length === 0 && (
-            <button onClick={openAdd} className="mt-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition">
-              {t('inventory.addItem')}
-            </button>
-          )}
+      ) : filteredItems.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-gray-400 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-2xl">
+          <span className="text-4xl mb-3">📦</span>
+          <p className="text-sm">{items.length === 0 ? t('inventory.noItems') : 'No items match this filter'}</p>
+          {items.length === 0 && <p className="text-xs mt-1">{t('inventory.addFirst')}</p>}
         </div>
       ) : (
-        <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div className="hidden sm:grid grid-cols-12 gap-4 px-5 py-3 bg-gray-50 dark:bg-gray-800 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-            <div className="col-span-4">Item</div>
-            <div className="col-span-2 text-center">{t('inventory.quantity')}</div>
-            <div className="col-span-2 text-center">{t('inventory.unit')}</div>
-            <div className="col-span-2 text-center">{t('inventory.alertThreshold')}</div>
-            <div className="col-span-1 text-center">Status</div>
-            <div className="col-span-1 text-center">Actions</div>
+        <div className="flex flex-col gap-2">
+          <div className="hidden md:grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wide">
+            <span>{t('inventory.itemName')}</span>
+            <span>{t('inventory.quantity')}</span>
+            <span>{t('inventory.unit')}</span>
+            <span>Status</span>
+            <span></span>
           </div>
 
-          {filtered.map((item, idx) => {
-            const status = getStatus(item);
+          {filteredItems.map(item => {
+            const { label, color } = getStockStatus(item);
             return (
               <div key={item._id}
-                className={`grid grid-cols-1 sm:grid-cols-12 gap-3 sm:gap-4 px-5 py-4 items-center ${idx > 0 ? 'border-t border-gray-100 dark:border-gray-800' : ''}`}>
-                <div className="sm:col-span-4">
-                  <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">{item.name}</p>
-                </div>
-                <div className="sm:col-span-2 text-center">
-                  <span className={`text-sm font-bold ${status === 'out' ? 'text-red-500' : status === 'low' ? 'text-orange-500' : 'text-gray-700 dark:text-gray-300'}`}>{item.quantity}</span>
-                </div>
-                <div className="sm:col-span-2 text-center">
-                  <span className="text-sm text-gray-500 dark:text-gray-400">{item.unit}</span>
-                </div>
-                <div className="sm:col-span-2 text-center">
-                  <span className="text-xs text-gray-400 dark:text-gray-500">≤ {item.lowStockThreshold} {item.unit}</span>
-                </div>
-                <div className="sm:col-span-1 flex justify-center">
-                  {status === 'out' ? (
-                    <span className="text-xs bg-red-50 dark:bg-red-900/20 text-red-500 px-2 py-0.5 rounded-full font-medium">{t('inventory.outOfStock')}</span>
-                  ) : status === 'low' ? (
-                    <span className="text-xs bg-orange-50 dark:bg-orange-900/20 text-orange-500 px-2 py-0.5 rounded-full font-medium">⚠️ {t('inventory.lowStock')}</span>
-                  ) : (
-                    <span className="text-xs bg-green-50 dark:bg-green-900/20 text-green-500 px-2 py-0.5 rounded-full font-medium">✅ {t('inventory.inStock')}</span>
-                  )}
-                </div>
-                <div className="sm:col-span-1 flex justify-center gap-3">
-                  <button onClick={() => openEdit(item)} className="text-gray-400 hover:text-orange-500 transition text-sm">✏️</button>
-                  <button onClick={() => handleDelete(item)} className="text-gray-400 hover:text-red-500 transition text-sm">🗑️</button>
-                </div>
+                className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 px-4 py-3 shadow-sm">
+                {bulkMode ? (
+                  <div className="grid grid-cols-[2fr_1fr_1fr] gap-3 items-center">
+                    <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{item.name}</span>
+                    <div>
+                      <label className="text-xs text-gray-400 block mb-0.5">{t('inventory.quantity')}</label>
+                      <input type="number" min="0" step="0.1"
+                        value={bulkEdits[item._id]?.quantity ?? item.quantity}
+                        onChange={e => setBulkEdits(b => ({ ...b, [item._id]: { ...b[item._id], quantity: parseFloat(e.target.value) || 0 } }))}
+                        className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-400 block mb-0.5">{t('inventory.alertWhen')}</label>
+                      <input type="number" min="0" step="0.5"
+                        value={bulkEdits[item._id]?.lowStockThreshold ?? item.lowStockThreshold}
+                        onChange={e => setBulkEdits(b => ({ ...b, [item._id]: { ...b[item._id], lowStockThreshold: parseFloat(e.target.value) || 0 } }))}
+                        className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">{item.name}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {item.quantity === null ? t('inventory.unlimited') : `${item.quantity} ${item.unit}`}
+                        {' · '}
+                        {t('inventory.alertWhen')} {item.lowStockThreshold} {item.unit}
+                      </p>
+                    </div>
+                    <span className={`text-xs font-medium px-2.5 py-1 rounded-full shrink-0 ${color}`}>{label}</span>
+                    <div className="flex gap-3 shrink-0">
+                      <button onClick={() => openEdit(item)}
+                        className="text-xs text-blue-500 hover:text-blue-700 transition">{t('common.edit')}</button>
+                      <button onClick={() => deleteItem(item._id)}
+                        className="text-xs text-red-400 hover:text-red-600 transition">{t('common.delete')}</button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
       )}
 
-      <p className="text-xs text-gray-400 dark:text-gray-600 mt-4 text-center">{t('inventory.helpText')}</p>
-
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
-          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl p-6 w-full max-w-sm">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-5">
-              {editItem ? t('inventory.editItem') : t('inventory.addItem')}
-            </h3>
-            <form onSubmit={handleSave} className="flex flex-col gap-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-sm shadow-xl">
+            <div className="px-6 pt-5 pb-3 border-b border-gray-100 dark:border-gray-800">
+              <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">
+                {editItem ? t('inventory.editItem') : t('inventory.addItem')}
+              </h3>
+            </div>
+            <form onSubmit={saveItem} className="px-6 py-5 flex flex-col gap-4">
               <div>
-                <label className="text-sm text-gray-600 dark:text-gray-400 mb-1 block">Item Name *</label>
-                <input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  placeholder="e.g. Chicken, Potatoes, Oil" autoFocus
-                  className="w-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm text-gray-600 dark:text-gray-400 mb-1 block">{t('inventory.quantity')} *</label>
-                  <input type="number" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))}
-                    placeholder="0" min="0" step="0.01"
-                    className="w-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
-                </div>
-                <div>
-                  <label className="text-sm text-gray-600 dark:text-gray-400 mb-1 block">{t('inventory.unit')} *</label>
-                  <select value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))}
-                    className="w-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
-                    <option value="" disabled>{t('inventory.selectUnit')}</option>
-                    {UNITS.map(group => (
-                      <optgroup key={group.group} label={group.group}>
-                        {group.units.map(u => <option key={u} value={u}>{u}</option>)}
-                      </optgroup>
-                    ))}
-                  </select>
-                </div>
+                <label className="text-sm text-gray-600 dark:text-gray-400 mb-1.5 block">{t('inventory.itemName')} *</label>
+                <input type="text" value={itemName} onChange={e => setItemName(e.target.value)}
+                  placeholder={t('inventory.itemNamePlaceholder')} required autoFocus
+                  className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                />
               </div>
               <div>
-                <label className="text-sm text-gray-600 dark:text-gray-400 mb-1 block">
-                  {t('inventory.alertThreshold')} *
+                <label className="text-sm text-gray-600 dark:text-gray-400 mb-1.5 block">
+                  {t('inventory.quantity')} <span className="text-gray-400 text-xs">(leave blank = unlimited)</span>
                 </label>
-                <input type="number" value={form.lowStockThreshold} onChange={e => setForm(f => ({ ...f, lowStockThreshold: e.target.value }))}
-                  placeholder="5" min="1" step="0.01"
-                  className="w-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
-                {form.unit && <p className="text-xs text-gray-400 mt-1">{t('inventory.alertWhen')} {form.lowStockThreshold || '?'} {form.unit}</p>}
+                <input type="number" value={quantity} onChange={e => setQuantity(e.target.value)}
+                  min="0" step="0.1" placeholder="e.g. 10"
+                  className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                />
               </div>
-              <div className="flex gap-3 mt-1">
+              <div>
+                <label className="text-sm text-gray-600 dark:text-gray-400 mb-1.5 block">{t('inventory.unit')} *</label>
+                <select value={unit} onChange={e => setUnit(e.target.value)}
+                  className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
+                  {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                  <option value="custom">Custom…</option>
+                </select>
+                {unit === 'custom' && (
+                  <input type="text" value={customUnit} onChange={e => setCustomUnit(e.target.value)}
+                    placeholder={t('inventory.unitPlaceholder')} required
+                    className="mt-2 w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  />
+                )}
+              </div>
+              <div>
+                <label className="text-sm text-gray-600 dark:text-gray-400 mb-1.5 block">
+                  {t('inventory.alertWhen')} {finalUnit || 'units'}
+                </label>
+                <input type="number" value={threshold} onChange={e => setThreshold(e.target.value)}
+                  min="0" step="0.5"
+                  className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                />
+              </div>
+              <div className="flex gap-3 pt-1">
                 <button type="button" onClick={() => setShowModal(false)}
-                  className="flex-1 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 py-2.5 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition">{t('common.cancel')}</button>
+                  className="flex-1 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 py-2.5 rounded-xl text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition">
+                  {t('common.cancel')}
+                </button>
                 <button type="submit" disabled={saving}
-                  className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white font-semibold py-2.5 rounded-lg text-sm transition">
-                  {saving ? t('common.loading') : editItem ? t('common.update') : t('inventory.addItem')}
+                  className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white font-semibold py-2.5 rounded-xl text-sm transition">
+                  {saving ? t('common.loading') : editItem ? t('common.update') : t('common.add')}
                 </button>
               </div>
             </form>

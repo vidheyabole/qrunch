@@ -10,7 +10,7 @@ export default function Layout({ children }) {
       <Navbar onMenuClick={() => setSidebarOpen(o => !o)} />
       <div className="flex">
         <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-        {/* Mobile overlay */}
+        {/* Mobile overlay — sits BEHIND the sidebar */}
         {sidebarOpen && (
           <div
             className="fixed inset-0 bg-black/40 z-20 md:hidden"

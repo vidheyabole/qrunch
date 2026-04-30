@@ -1,6 +1,3 @@
-// Replace your entire TablesPage.jsx with this version
-// Only the handlePrintQR function and the hidden iframe have changed
-
 import { useState, useEffect, useRef } from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { useAuth } from '../../hooks/useAuth';
@@ -147,7 +144,7 @@ export default function TablesPage() {
 
   return (
     <div>
-      {/* Hidden iframe for printing — no popup needed */}
+      {/* Hidden iframe for printing */}
       <iframe ref={iframeRef} style={{ display: 'none' }} title="print-frame" />
 
       {/* Header */}
@@ -216,7 +213,7 @@ export default function TablesPage() {
                   <span className="text-xs">{table.seats} seat{table.seats !== 1 ? 's' : ''}</span>
                 </div>
 
-                {/* QR Code preview (display only) */}
+                {/* QR Code preview */}
                 <div className="flex justify-center py-1">
                   <QRCodeCanvas
                     value={qrUrl}
@@ -227,7 +224,7 @@ export default function TablesPage() {
                   />
                 </div>
 
-                {/* Hidden QR canvas for download/print — always black on white */}
+                {/* Hidden QR canvas for download/print */}
                 <div style={{ display: 'none' }}>
                   <QRCodeCanvas
                     id={`qr-canvas-${table._id}`}
@@ -243,8 +240,7 @@ export default function TablesPage() {
                 <select
                   value={table.status}
                   onChange={e => handleStatusChange(table, e.target.value)}
-                  className="w-full text-xs border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-orange-400"
-                >
+                  className="w-full text-xs border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-orange-400">
                   <option value="empty">Empty</option>
                   <option value="occupied">Occupied</option>
                   <option value="order_pending">Order Pending</option>
@@ -260,6 +256,13 @@ export default function TablesPage() {
                   <button onClick={() => handlePrintQR(table)}
                     className="text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-500 dark:text-blue-400 py-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40 transition font-medium">
                     🖨 Print
+                  </button>
+                  <button onClick={() => {
+                    navigator.clipboard.writeText(qrUrl);
+                    toast.success('Link copied!');
+                  }}
+                    className="text-xs bg-green-50 dark:bg-green-900/20 text-green-500 dark:text-green-400 py-1.5 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/40 transition font-medium col-span-2">
+                    🔗 Copy Link
                   </button>
                   <button onClick={() => openEdit(table)}
                     className="text-xs bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition">

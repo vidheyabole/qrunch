@@ -2,6 +2,7 @@ const bcrypt        = require('bcryptjs');
 const { validationResult } = require('express-validator');
 const Owner         = require('../models/Owner');
 const Restaurant    = require('../models/Restaurant');
+const cloudinary    = require('../config/cloudinary');
 const generateToken = require('../utils/generateToken');
 
 const formatResponse = (owner, restaurants) => ({
@@ -12,6 +13,7 @@ const formatResponse = (owner, restaurants) => ({
   subscriptionActive: owner.subscriptionActive,
   trialEnds:          owner.trialEnds,
   avatar:             owner.avatar || '',
+  profilePicture:     owner.profilePicture || '',
   authMethod:         owner.authMethod,
   restaurants,
   token: generateToken(owner._id)
@@ -28,7 +30,11 @@ const register = async (req, res, next) => {
     if (exists) return res.status(400).json({ message: 'Email already registered' });
     const hash  = await bcrypt.hash(password, 10);
     const owner = await Owner.create({ ownerName, email, password: hash, region, authMethod: 'email' });
-    const restaurant = await Restaurant.create({ name: restaurantName, owner: owner._id });
+    const restaurant = await Restaurant.create({
+      name:   restaurantName,
+      owner:  owner._id,
+      region: region
+    });
     res.status(201).json(formatResponse(owner, [restaurant]));
   } catch (err) { next(err); }
 };
@@ -54,32 +60,123 @@ const getMe = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// ── UPDATE PROFILE ────────────────────────────────────────
+const updateProfile = async (req, res, next) => {
+  try {
+    const { ownerName, currentPassword, newPassword, restaurantName } = req.body;
+    const owner = await Owner.findById(req.owner._id);
+    if (!owner) return res.status(404).json({ message: 'Owner not found' });
+
+    // Update name
+    if (ownerName?.trim()) owner.ownerName = ownerName.trim();
+
+    // Update password
+    if (newPassword) {
+      if (!currentPassword) return res.status(400).json({ message: 'Current password is required' });
+      const match = await bcrypt.compare(currentPassword, owner.password);
+      if (!match) return res.status(400).json({ message: 'Current password is incorrect' });
+      if (newPassword.length < 6) return res.status(400).json({ message: 'New password must be at least 6 characters' });
+      owner.password = await bcrypt.hash(newPassword, 10);
+    }
+
+    await owner.save();
+
+    // Update restaurant name if provided
+    if (restaurantName?.trim() && req.body.restaurantId) {
+      await Restaurant.findOneAndUpdate(
+        { _id: req.body.restaurantId, owner: owner._id },
+        { name: restaurantName.trim() }
+      );
+    }
+
+    const restaurants = await Restaurant.find({ owner: owner._id });
+    res.json(formatResponse(owner, restaurants));
+  } catch (err) { next(err); }
+};
+
+// ── UPDATE PROFILE PICTURE ────────────────────────────────
+const updateProfilePicture = async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: 'No image provided' });
+    const owner = await Owner.findById(req.owner._id);
+    if (!owner) return res.status(404).json({ message: 'Owner not found' });
+
+    // Delete old profile picture from Cloudinary
+    if (owner.profilePicturePublicId) {
+      await cloudinary.v2.uploader.destroy(owner.profilePicturePublicId).catch(() => {});
+    }
+
+    // Upload new
+    const result = await new Promise((resolve, reject) => {
+      const stream = cloudinary.v2.uploader.upload_stream(
+        { folder: 'qrunch/profiles', transformation: [{ width: 400, height: 400, crop: 'fill', gravity: 'face' }] },
+        (err, result) => err ? reject(err) : resolve(result)
+      );
+      stream.end(req.file.buffer);
+    });
+
+    owner.profilePicture          = result.secure_url;
+    owner.profilePicturePublicId  = result.public_id;
+    await owner.save();
+
+    const restaurants = await Restaurant.find({ owner: owner._id });
+    res.json(formatResponse(owner, restaurants));
+  } catch (err) { next(err); }
+};
+
+// ── UPDATE RESTAURANT LOGO ────────────────────────────────
+const updateRestaurantLogo = async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: 'No image provided' });
+    const { restaurantId } = req.body;
+
+    const restaurant = await Restaurant.findOne({ _id: restaurantId, owner: req.owner._id });
+    if (!restaurant) return res.status(404).json({ message: 'Restaurant not found' });
+
+    if (restaurant.logoPublicId) {
+      await cloudinary.v2.uploader.destroy(restaurant.logoPublicId).catch(() => {});
+    }
+
+    const result = await new Promise((resolve, reject) => {
+      const stream = cloudinary.v2.uploader.upload_stream(
+        { folder: 'qrunch/logos', transformation: [{ width: 400, height: 400, crop: 'limit', quality: 'auto' }] },
+        (err, result) => err ? reject(err) : resolve(result)
+      );
+      stream.end(req.file.buffer);
+    });
+
+    restaurant.logo          = result.secure_url;
+    restaurant.logoPublicId  = result.public_id;
+    await restaurant.save();
+
+    const restaurants = await Restaurant.find({ owner: req.owner._id });
+    const owner       = await Owner.findById(req.owner._id);
+    res.json(formatResponse(owner, restaurants));
+  } catch (err) { next(err); }
+};
+
 // ── GOOGLE OAUTH ─────────────────────────────────────────
 
-// Called after Google redirects back — sends token to frontend
 const googleCallback = async (req, res) => {
   try {
     const owner       = req.user;
     const restaurants = await Restaurant.find({ owner: owner._id });
-
-    // If new Google user with no restaurants, create one
     if (restaurants.length === 0) {
       const restaurant = await Restaurant.create({
-        name:  `${owner.ownerName}'s Restaurant`,
-        owner: owner._id
+        name:   `${owner.ownerName}'s Restaurant`,
+        owner:  owner._id,
+        region: owner.region || 'india'
       });
       restaurants.push(restaurant);
     }
-
-    const response  = formatResponse(owner, restaurants);
-    const encoded   = encodeURIComponent(JSON.stringify(response));
+    const response = formatResponse(owner, restaurants);
+    const encoded  = encodeURIComponent(JSON.stringify(response));
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/auth/google/callback?data=${encoded}`);
   } catch (err) {
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/login?error=google_failed`);
   }
 };
 
-// Connect Google to an existing email/password account
 const connectGoogle = async (req, res, next) => {
   const { googleId, avatar } = req.body;
   try {
@@ -95,7 +192,6 @@ const connectGoogle = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-// Disconnect Google from account (only if they also have a password)
 const disconnectGoogle = async (req, res, next) => {
   try {
     const owner = await Owner.findById(req.owner._id);
@@ -109,4 +205,8 @@ const disconnectGoogle = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { register, login, getMe, googleCallback, connectGoogle, disconnectGoogle };
+module.exports = {
+  register, login, getMe,
+  updateProfile, updateProfilePicture, updateRestaurantLogo,
+  googleCallback, connectGoogle, disconnectGoogle
+};

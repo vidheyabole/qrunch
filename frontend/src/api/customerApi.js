@@ -1,24 +1,34 @@
-import axios from 'axios';
-
 const BASE = '/api/customer';
 
-export const getRestaurantInfo = async (restaurantId, tableId) => {
-  const { data } = await axios.get(`${BASE}/info/${restaurantId}/${tableId}`);
-  return data;
+export const getPublicMenu = async (restaurantId, tableId, lang = 'en') => {
+  const bust = Date.now(); // ← forces a fresh request every time
+  const res = await fetch(
+    `/api/customer/${restaurantId}/${tableId}/menu?lang=${lang}&_=${bust}`,
+    { cache: 'no-store' } // ← tells browser never to cache this
+  );
+  if (!res.ok) throw new Error('Failed to load menu');
+  return res.json();
 };
 
-export const getPublicMenu = async (restaurantId, lang = 'en') => {
-  const { data } = await axios.get(`${BASE}/menu/${restaurantId}`, { params: { lang } });
-  return data;
+export const placeOrder = async (restaurantId, tableId, body) => {
+  const res = await fetch(`${BASE}/${restaurantId}/${tableId}/orders`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error('Failed to place order');
+  return res.json();
 };
 
-export const getRecommendations = async (restaurantId, phone, lang = 'en') => {
-  if (!phone) return [];
-  const { data } = await axios.get(`${BASE}/recommendations/${restaurantId}/${phone}`, { params: { lang } });
-  return data;
+export const getRecommendations = async (restaurantId, itemIds, lang = 'en') => {
+  const ids = itemIds.join(',');
+  const res = await fetch(`${BASE}/${restaurantId}/recommendations?items=${ids}&lang=${lang}`);
+  if (!res.ok) return [];
+  return res.json();
 };
 
-export const placeOrder = async (payload) => {
-  const { data } = await axios.post(`${BASE}/order`, payload);
-  return data;
+export const getOrderStatus = async (restaurantId, tableId, orderId) => {
+  const res = await fetch(`${BASE}/${restaurantId}/${tableId}/orders/${orderId}`);
+  if (!res.ok) throw new Error('Failed to get order status');
+  return res.json();
 };

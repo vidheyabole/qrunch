@@ -5,10 +5,10 @@ import { createRestaurant } from '../api/restaurantApi';
 export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [owner, setOwner]                         = useState(null);
-  const [restaurants, setRestaurants]             = useState([]);
+  const [owner,             setOwner]             = useState(null);
+  const [restaurants,       setRestaurants]       = useState([]);
   const [currentRestaurant, setCurrentRestaurant] = useState(null);
-  const [loading, setLoading]                     = useState(true);
+  const [loading,           setLoading]           = useState(true);
 
   const applyData = (data) => {
     setOwner(data);
@@ -46,7 +46,6 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
-  // Called from GoogleCallbackPage after Google redirect
   const loginWithGoogle = (data) => {
     localStorage.setItem('qrunch_token', data.token);
     applyData(data);
@@ -65,22 +64,33 @@ export const AuthProvider = ({ children }) => {
   };
 
   const addRestaurant = async (name) => {
-    const token        = localStorage.getItem('qrunch_token');
+    const token         = localStorage.getItem('qrunch_token');
     const newRestaurant = await createRestaurant(name, token);
     setRestaurants(prev => [...prev, newRestaurant]);
     setCurrentRestaurant(newRestaurant);
     return newRestaurant;
   };
 
-  const updateOwner = (updatedOwner) => {
-    setOwner(prev => ({ ...prev, ...updatedOwner }));
+  const updateOwner = (updates) => {
+    setOwner(prev => ({ ...prev, ...updates }));
+  };
+
+  // Updates restaurants list + refreshes currentRestaurant
+  const updateRestaurants = (updatedRestaurants) => {
+    setRestaurants(updatedRestaurants);
+    setCurrentRestaurant(prev =>
+      prev
+        ? updatedRestaurants.find(r => r._id === prev._id) || updatedRestaurants[0]
+        : updatedRestaurants[0]
+    );
   };
 
   return (
     <AuthContext.Provider value={{
       user: owner, owner, restaurants, currentRestaurant,
       loading, login, register, loginWithGoogle,
-      logout, switchRestaurant, addRestaurant, updateOwner
+      logout, switchRestaurant, addRestaurant,
+      updateOwner, updateRestaurants
     }}>
       {children}
     </AuthContext.Provider>

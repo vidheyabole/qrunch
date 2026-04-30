@@ -1,13 +1,15 @@
-export const LANGUAGES = [
-  { code: 'en', name: 'English',   native: 'English',    flag: '🇬🇧' },
-  { code: 'hi', name: 'Hindi',     native: 'हिंदी',       flag: '🇮🇳' },
-  { code: 'mr', name: 'Marathi',   native: 'मराठी',       flag: '🇮🇳' },
-  { code: 'gu', name: 'Gujarati',  native: 'ગુજરાતી',    flag: '🇮🇳' },
-  { code: 'ta', name: 'Tamil',     native: 'தமிழ்',       flag: '🇮🇳' },
-  { code: 'te', name: 'Telugu',    native: 'తెలుగు',      flag: '🇮🇳' },
-  { code: 'ml', name: 'Malayalam', native: 'മലയാളം',     flag: '🇮🇳' },
-  { code: 'kn', name: 'Kannada',   native: 'ಕನ್ನಡ',       flag: '🇮🇳' },
-  { code: 'bn', name: 'Bengali',   native: 'বাংলা',       flag: '🇮🇳' },
-  { code: 'pa', name: 'Punjabi',   native: 'ਪੰਜਾਬੀ',     flag: '🇮🇳' },
-  { code: 'es', name: 'Spanish',   native: 'Español',    flag: '🇪🇸' },
+const LANGUAGES = [
+  { code: 'en', label: 'English',    native: 'English',   flag: '🇺🇸🇮🇳', region: 'both' },
+  { code: 'es', label: 'Spanish',    native: 'Español',   flag: '🇪🇸',    region: 'usa'  },
+  { code: 'hi', label: 'Hindi',      native: 'हिन्दी',      flag: '🇮🇳',    region: 'india' },
+  { code: 'mr', label: 'Marathi',    native: 'मराठी',       flag: '🇮🇳',    region: 'india' },
+  { code: 'gu', label: 'Gujarati',   native: 'ગુજરાતી',    flag: '🇮🇳',    region: 'india' },
+  { code: 'ta', label: 'Tamil',      native: 'தமிழ்',      flag: '🇮🇳',    region: 'india' },
+  { code: 'te', label: 'Telugu',     native: 'తెలుగు',     flag: '🇮🇳',    region: 'india' },
+  { code: 'ml', label: 'Malayalam',  native: 'മലയാളം',    flag: '🇮🇳',    region: 'india' },
+  { code: 'kn', label: 'Kannada',    native: 'ಕನ್ನಡ',      flag: '🇮🇳',    region: 'india' },
+  { code: 'bn', label: 'Bengali',    native: 'বাংলা',      flag: '🇮🇳',    region: 'india' },
+  { code: 'pa', label: 'Punjabi',    native: 'ਪੰਜਾਬੀ',     flag: '🇮🇳',    region: 'india' },
 ];
+
+export default LANGUAGES;

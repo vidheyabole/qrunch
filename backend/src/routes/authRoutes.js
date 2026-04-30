@@ -1,8 +1,10 @@
 const express  = require('express');
 const { body } = require('express-validator');
 const passport = require('../config/passport');
+const { upload } = require('../middleware/uploadMiddleware');
 const {
   register, login, getMe,
+  updateProfile, updateProfilePicture, updateRestaurantLogo,
   googleCallback, connectGoogle, disconnectGoogle
 } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
@@ -19,13 +21,17 @@ router.post('/register', [
 ], register);
 
 router.post('/login', login);
-router.get('/me',     protect, getMe);
+router.get ('/me',    protect, getMe);
+
+// ── Profile ───────────────────────────────────────────────
+router.put  ('/profile',          protect,                          updateProfile);
+router.post ('/profile/picture',  protect, upload.single('image'),  updateProfilePicture);
+router.post ('/restaurant/logo',  protect, upload.single('image'),  updateRestaurantLogo);
 
 // ── Google OAuth ──────────────────────────────────────────
 router.get('/google',
   passport.authenticate('google', { scope: ['profile', 'email'] })
 );
-
 router.get('/google/callback',
   passport.authenticate('google', { failureRedirect: '/login?error=google_failed', session: false }),
   googleCallback

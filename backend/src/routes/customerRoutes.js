@@ -1,11 +1,11 @@
 const express = require('express');
-const { getRestaurantInfo, getPublicMenu, getRecommendations, placeOrder } = require('../controllers/customerController');
+const router  = express.Router();
+const ctrl    = require('../controllers/customerController');
 
-const router = express.Router();
-
-router.get('/info/:restaurantId/:tableId',          getRestaurantInfo);
-router.get('/menu/:restaurantId',                   getPublicMenu);        // ?lang=hi
-router.get('/recommendations/:restaurantId/:phone', getRecommendations);  // ?lang=hi
-router.post('/order',                               placeOrder);
+// Public routes — no auth required
+router.get ('/:restaurantId/:tableId/menu',          ctrl.getPublicMenu);
+router.post('/:restaurantId/:tableId/orders',        ctrl.placeOrder);
+router.get ('/:restaurantId/:tableId/orders/:orderId', ctrl.getOrderStatus);
+router.get ('/:restaurantId/recommendations',        ctrl.getRecommendations);
 
 module.exports = router;

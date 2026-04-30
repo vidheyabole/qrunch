@@ -1,5 +1,5 @@
-const Category = require('../models/Category');
-const MenuItem = require('../models/MenuItem');
+const Category   = require('../models/Category');
+const MenuItem   = require('../models/MenuItem');
 const Restaurant = require('../models/Restaurant');
 const cloudinary = require('../config/cloudinary');
 
@@ -10,6 +10,18 @@ const verifyOwnership = async (restaurantId, ownerId) => {
     const e = new Error('Not authorized'); e.status = 403; throw e;
   }
   return restaurant;
+};
+
+// Helper — verify staff belongs to this restaurant
+const verifyStaffRestaurant = (req, restaurantId) => {
+  if (req.staff && req.staff.restaurant.toString() !== restaurantId.toString())
+    throw Object.assign(new Error('Not authorized'), { status: 403 });
+};
+
+// Helper — verify access for either owner or staff
+const verifyAccess = async (req, restaurantId) => {
+  if (req.owner) await verifyOwnership(restaurantId, req.owner._id);
+  else           verifyStaffRestaurant(req, restaurantId);
 };
 
 const uploadToCloudinary = (buffer, folder) =>
@@ -27,8 +39,8 @@ const addCategory = async (req, res, next) => {
   const { restaurantId, name } = req.body;
   if (!name?.trim()) return res.status(400).json({ message: 'Category name is required' });
   try {
-    await verifyOwnership(restaurantId, req.owner._id);
-    const count = await Category.countDocuments({ restaurant: restaurantId });
+    await verifyAccess(req, restaurantId);
+    const count    = await Category.countDocuments({ restaurant: restaurantId });
     const category = await Category.create({ name: name.trim(), restaurant: restaurantId, order: count });
     res.status(201).json(category);
   } catch (err) { next(err); }
@@ -36,7 +48,7 @@ const addCategory = async (req, res, next) => {
 
 const getCategories = async (req, res, next) => {
   try {
-    await verifyOwnership(req.params.restaurantId, req.owner._id);
+    await verifyAccess(req, req.params.restaurantId);
     const categories = await Category.find({ restaurant: req.params.restaurantId }).sort({ order: 1, createdAt: 1 });
     res.json(categories);
   } catch (err) { next(err); }
@@ -46,7 +58,7 @@ const updateCategory = async (req, res, next) => {
   try {
     const category = await Category.findById(req.params.id);
     if (!category) return res.status(404).json({ message: 'Category not found' });
-    await verifyOwnership(category.restaurant, req.owner._id);
+    await verifyAccess(req, category.restaurant);
     category.name = req.body.name?.trim() || category.name;
     await category.save();
     res.json(category);
@@ -57,7 +69,7 @@ const deleteCategory = async (req, res, next) => {
   try {
     const category = await Category.findById(req.params.id);
     if (!category) return res.status(404).json({ message: 'Category not found' });
-    await verifyOwnership(category.restaurant, req.owner._id);
+    await verifyAccess(req, category.restaurant);
     const items = await MenuItem.find({ category: category._id });
     await Promise.all(
       items.map(item =>
@@ -76,7 +88,7 @@ const getItems = async (req, res, next) => {
   try {
     const category = await Category.findById(req.params.categoryId);
     if (!category) return res.status(404).json({ message: 'Category not found' });
-    await verifyOwnership(category.restaurant, req.owner._id);
+    await verifyAccess(req, category.restaurant);
     const items = await MenuItem.find({ category: req.params.categoryId }).sort({ createdAt: 1 });
     res.json(items);
   } catch (err) { next(err); }
@@ -85,13 +97,19 @@ const getItems = async (req, res, next) => {
 const addItem = async (req, res, next) => {
   try {
     const { categoryId, restaurantId, name, description, price, dietaryTags, modifiers, generatedImageUrl } = req.body;
-    await verifyOwnership(restaurantId, req.owner._id);
 
-    let imageUrl = '';
+    if (!name?.trim())  return res.status(400).json({ message: 'Item name is required' });
+    if (!categoryId)    return res.status(400).json({ message: 'Category ID is required' });
+    if (!restaurantId)  return res.status(400).json({ message: 'Restaurant ID is required' });
+    if (!price)         return res.status(400).json({ message: 'Price is required' });
+
+    await verifyAccess(req, restaurantId);
+
+    let imageUrl      = '';
     let imagePublicId = '';
 
     if (req.file) {
-      const result = await uploadToCloudinary(req.file.buffer, 'qrunch/menu-items');
+      const result  = await uploadToCloudinary(req.file.buffer, 'qrunch/menu-items');
       imageUrl      = result.secure_url;
       imagePublicId = result.public_id;
     } else if (generatedImageUrl) {
@@ -117,7 +135,7 @@ const updateItem = async (req, res, next) => {
   try {
     const item = await MenuItem.findById(req.params.id);
     if (!item) return res.status(404).json({ message: 'Item not found' });
-    await verifyOwnership(item.restaurant, req.owner._id);
+    await verifyAccess(req, item.restaurant);
 
     const { name, description, price, dietaryTags, modifiers, generatedImageUrl } = req.body;
 
@@ -146,7 +164,7 @@ const deleteItem = async (req, res, next) => {
   try {
     const item = await MenuItem.findById(req.params.id);
     if (!item) return res.status(404).json({ message: 'Item not found' });
-    await verifyOwnership(item.restaurant, req.owner._id);
+    await verifyAccess(req, item.restaurant);
     if (item.imagePublicId) await cloudinary.v2.uploader.destroy(item.imagePublicId);
     await item.deleteOne();
     res.json({ message: 'Item deleted' });
@@ -157,7 +175,7 @@ const toggleAvailability = async (req, res, next) => {
   try {
     const item = await MenuItem.findById(req.params.id);
     if (!item) return res.status(404).json({ message: 'Item not found' });
-    await verifyOwnership(item.restaurant, req.owner._id);
+    await verifyAccess(req, item.restaurant);
     item.isAvailable = !item.isAvailable;
     await item.save();
     res.json(item);

@@ -1,150 +1,218 @@
-const Restaurant = require('../models/Restaurant');
-const Category   = require('../models/Category');
-const MenuItem   = require('../models/MenuItem');
-const Table      = require('../models/Table');
-const Order      = require('../models/Order');
-const { getIO }  = require('../config/socket');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Restaurant         = require('../models/Restaurant');
+const Category           = require('../models/Category');
+const MenuItem           = require('../models/MenuItem');
+const Table              = require('../models/Table');
+const Order              = require('../models/Order');
+const TableSession       = require('../models/TableSession');
+const { getIO }          = require('../config/socket');
+const { translateTexts } = require('../utils/translator');
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const SUPPORTED_LANGS = new Set([
+  'hi','mr','gu','ta','te','ml','kn','bn','pa','es'
+]);
 
-const LANG_NAMES = {
-  hi: 'Hindi', mr: 'Marathi', gu: 'Gujarati',
-  ta: 'Tamil', te: 'Telugu',  ml: 'Malayalam',
-  kn: 'Kannada', bn: 'Bengali', pa: 'Punjabi', es: 'Spanish'
+const getTranslatedItems = async (items, lang) => {
+  if (lang === 'en' || !['hi','mr','gu','ta','te','ml','kn','bn','pa','es'].includes(lang)) {
+    return items.map(i => i.toObject ? i.toObject() : i);
+  }
+
+  const uncached = items.filter(i => !i.translations?.[lang]?.name);
+  const cached   = items.filter(i =>  i.translations?.[lang]?.name);
+
+  if (uncached.length > 0) {
+    try {
+      const names        = uncached.map(i => i.name        || '');
+      const descriptions = uncached.map(i => i.description || '');
+
+      const [translatedNames, translatedDescs] = await Promise.all([
+        translateTexts(names,        lang),
+        translateTexts(descriptions, lang)
+      ]);
+
+      uncached.forEach((item, idx) => {
+        const tName = translatedNames[idx];
+        const tDesc = translatedDescs[idx];
+
+        if (tName && tName !== item.name) {
+          item._translatedName        = tName;
+          item._translatedDescription = tDesc || item.description || '';
+
+          MenuItem.findByIdAndUpdate(item._id, {
+            $set: {
+              [`translations.${lang}`]: {
+                name:        item._translatedName,
+                description: item._translatedDescription
+              }
+            }
+          }).exec().catch(() => {});
+        } else {
+          item._translatedName        = item.name;
+          item._translatedDescription = item.description || '';
+        }
+      });
+
+    } catch (err) {
+      console.error('Translation batch error:', err.message);
+      uncached.forEach(item => {
+        item._translatedName        = item.name;
+        item._translatedDescription = item.description || '';
+      });
+    }
+  }
+
+  return items.map(item => {
+    const plain = item.toObject ? item.toObject() : { ...item };
+    const tr    = item.translations?.[lang];
+
+    if (tr?.name) {
+      return { ...plain, name: tr.name, description: tr.description ?? plain.description };
+    }
+    return {
+      ...plain,
+      name:        item._translatedName        ?? plain.name,
+      description: item._translatedDescription ?? plain.description
+    };
+  });
 };
 
-const getRestaurantInfo = async (req, res, next) => {
+// ── GET /api/customer/:restaurantId/:tableId/menu ────────────
+exports.getPublicMenu = async (req, res) => {
   try {
-    const restaurant = await Restaurant.findById(req.params.restaurantId).select('name');
+    const { restaurantId, tableId } = req.params;
+    const lang = req.query.lang || 'en';
+
+    res.set('Cache-Control', 'no-store');
+
+    const restaurant = await Restaurant.findById(restaurantId);
     if (!restaurant) return res.status(404).json({ message: 'Restaurant not found' });
-    const table = await Table.findById(req.params.tableId).select('tableNumber tableName seats');
+
+    const table = await Table.findOne({ _id: tableId, restaurant: restaurantId });
     if (!table) return res.status(404).json({ message: 'Table not found' });
-    res.json({ restaurant, table });
-  } catch (err) { next(err); }
+
+    const categories = await Category.find({ restaurant: restaurantId }).sort('order');
+    const items      = await MenuItem.find({ restaurant: restaurantId, isAvailable: true });
+
+    const translatedItems = await getTranslatedItems(items, lang);
+
+    res.json({ restaurant, table, categories, items: translatedItems });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 };
 
-const buildMenu = (categories, items, lang) => {
-  return categories.map(cat => ({
-    ...cat.toObject(),
-    items: items
-      .filter(i => i.category.toString() === cat._id.toString())
-      .map(i => {
-        const trans = lang && lang !== 'en' && i.translations?.[lang];
-        return {
-          ...i.toObject(),
-          name:        trans?.name        || i.name,
-          description: trans?.description || i.description
-        };
-      })
-  })).filter(cat => cat.items.length > 0);
+// ── POST /api/customer/:restaurantId/:tableId/orders ─────────
+exports.placeOrder = async (req, res) => {
+  try {
+    const { restaurantId, tableId } = req.params;
+    const { items, customerName, customerPhone, totalAmount } = req.body;
+
+    const restaurant = await Restaurant.findById(restaurantId);
+    if (!restaurant) return res.status(404).json({ message: 'Restaurant not found' });
+
+    const table = await Table.findById(tableId);
+    if (!table) return res.status(404).json({ message: 'Table not found' });
+
+    const mappedItems = items.map(i => ({
+      menuItemId:          i.menuItem || i.menuItemId,
+      name:                i.name,
+      price:               i.price,
+      quantity:            i.qty || i.quantity,
+      selectedModifiers:   i.selectedMods || i.selectedModifiers || [],
+      specialInstructions: i.specialNote  || i.specialInstructions || ''
+    }));
+
+    const order = await Order.create({
+      restaurant:    restaurantId,
+      table:         tableId,
+      tableNumber:   table.tableNumber,
+      items:         mappedItems,
+      customerName:  customerName  || '',
+      customerPhone: customerPhone || '',
+      totalAmount,
+      status: 'new'
+    });
+
+    // ── Auto open or update session ──────────────────────────
+    try {
+      let session = await TableSession.findOne({
+        restaurant: restaurantId,
+        table:      tableId,
+        status:     { $in: ['open', 'bill_requested'] }
+      });
+
+      if (session) {
+        session.orders.push(order._id);
+        session.totalAmount += totalAmount;
+        await session.save();
+        try { getIO().to(restaurantId).emit('session_updated', session); } catch (_) {}
+      } else {
+        session = await TableSession.create({
+          restaurant:  restaurantId,
+          table:       tableId,
+          tableNumber: table.tableNumber,
+          orders:      [order._id],
+          totalAmount,
+          status:      'open'
+        });
+        await Table.findByIdAndUpdate(tableId, { status: 'occupied' });
+        try { getIO().to(restaurantId).emit('session_opened', session); } catch (_) {}
+      }
+    } catch (sessionErr) {
+      console.error('Session update error:', sessionErr.message);
+    }
+
+    try { getIO().to(restaurantId).emit('new_order', order); } catch (_) {}
+
+    res.status(201).json(order);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 };
 
-const getPublicMenu = async (req, res, next) => {
+// ── GET /api/customer/:restaurantId/:tableId/orders/:orderId ─
+exports.getOrderStatus = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.orderId);
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+    res.json(order);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ── GET /api/customer/:restaurantId/recommendations ──────────
+exports.getRecommendations = async (req, res) => {
   try {
     const { restaurantId } = req.params;
-    const lang = req.query.lang || 'en';
-    const categories = await Category.find({ restaurant: restaurantId }).sort({ order: 1, createdAt: 1 });
-    let items = await MenuItem.find({ restaurant: restaurantId, isAvailable: true });
+    const itemIds = (req.query.items || '').split(',').filter(Boolean);
+    const lang    = req.query.lang || 'en';
 
-    // Translate if needed
-    if (lang !== 'en' && LANG_NAMES[lang]) {
-      const needsTranslation = items.filter(i => !i.translations?.[lang]?.name);
-      if (needsTranslation.length > 0) {
-        try {
-          const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-          const toTranslate = needsTranslation.map(i => ({
-            id: i._id.toString(), name: i.name, description: i.description || ''
-          }));
-          const result = await model.generateContent(
-            `Translate these restaurant menu items to ${LANG_NAMES[lang]}.
-Keep food names that are already in the target language or are brand names unchanged.
-Return ONLY a valid JSON array with the same number of objects, each having "id", "name", "description" fields.
-No markdown, no explanation.
+    if (!itemIds.length) return res.json([]);
 
-${JSON.stringify(toTranslate)}`
-          );
-          let text = result.response.text().trim().replace(/```json|```/g, '').trim();
-          const translated = JSON.parse(text);
+    const recentOrders = await Order.find({
+      restaurant:       restaurantId,
+      'items.menuItem': { $in: itemIds }
+    }).limit(200);
 
-          // Cache translations
-          await Promise.all(translated.map(async t => {
-            const item = items.find(i => i._id.toString() === t.id);
-            if (item) {
-              item.translations = { ...item.translations, [lang]: { name: t.name, description: t.description } };
-              item.markModified('translations');
-              await item.save();
-            }
-          }));
-        } catch (e) {
-          console.error('Translation error:', e.message);
-          // Fall back to English silently
-        }
-        // Reload items with fresh translations
-        items = await MenuItem.find({ restaurant: restaurantId, isAvailable: true });
+    const coCount = {};
+    for (const order of recentOrders) {
+      const otherIds = order.items
+        .map(i => i.menuItem?.toString())
+        .filter(id => id && !itemIds.includes(id));
+      for (const id of otherIds) {
+        coCount[id] = (coCount[id] || 0) + 1;
       }
     }
 
-    res.json(buildMenu(categories, items, lang));
-  } catch (err) { next(err); }
-};
+    const topIds = Object.entries(coCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([id]) => id);
 
-const getRecommendations = async (req, res, next) => {
-  const { restaurantId, phone } = req.params;
-  const lang = req.query.lang || 'en';
-  if (!phone || phone === 'anonymous') return res.json([]);
-  try {
-    const orders = await Order.find({ restaurant: restaurantId, customerPhone: phone });
-    if (orders.length === 0) return res.json([]);
-    const countMap = {};
-    orders.forEach(order => {
-      order.items.forEach(item => {
-        const id = item.menuItemId?.toString();
-        if (!id) return;
-        countMap[id] = (countMap[id] || 0) + item.quantity;
-      });
-    });
-    const itemIds   = Object.keys(countMap);
-    const menuItems = await MenuItem.find({ _id: { $in: itemIds }, isAvailable: true });
-    const recommendations = menuItems
-      .map(item => {
-        const trans = lang !== 'en' && item.translations?.[lang];
-        return {
-          ...item.toObject(),
-          name:        trans?.name        || item.name,
-          description: trans?.description || item.description,
-          orderCount:  countMap[item._id.toString()] || 0
-        };
-      })
-      .sort((a, b) => b.orderCount - a.orderCount)
-      .slice(0, 8);
-    res.json(recommendations);
-  } catch (err) { next(err); }
+    const recs = await MenuItem.find({ _id: { $in: topIds }, isAvailable: true });
+    const translatedRecs = await getTranslatedItems(recs, lang);
+    res.json(translatedRecs);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 };
-
-const placeOrder = async (req, res, next) => {
-  const { restaurantId, tableId, items, customerName, customerPhone } = req.body;
-  if (!items || items.length === 0) return res.status(400).json({ message: 'Cart is empty' });
-  try {
-    const table = await Table.findById(tableId);
-    if (!table) return res.status(404).json({ message: 'Table not found' });
-    const totalAmount = items.reduce((sum, item) => {
-      const modExtra = (item.selectedModifiers || []).reduce((s, m) => s + (m.extraPrice || 0), 0);
-      return sum + (item.price + modExtra) * item.quantity;
-    }, 0);
-    const order = await Order.create({
-      restaurant: restaurantId, table: tableId,
-      tableNumber: table.tableNumber,
-      customerName: customerName?.trim() || '',
-      customerPhone: customerPhone?.trim() || '',
-      items, totalAmount: Math.round(totalAmount * 100) / 100
-    });
-    table.status = 'order_pending';
-    await table.save();
-    try { getIO().to(restaurantId.toString()).emit('new_order', order); }
-    catch (e) { console.error('Socket emit error:', e.message); }
-    res.status(201).json(order);
-  } catch (err) { next(err); }
-};
-
-module.exports = { getRestaurantInfo, getPublicMenu, getRecommendations, placeOrder };

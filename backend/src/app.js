@@ -53,6 +53,11 @@ app.use('/api/customer',    customerRoutes);
 app.use('/api/orders',      orderRoutes);
 app.use('/api/inventory',   inventoryRoutes);
 app.use('/api/analytics',   analyticsRoutes);
+app.use('/api/staff', require('./routes/staffRoutes'));
+
+app.use('/api/sessions', require('./routes/sessionRoutes'));
+
+app.use('/api/feedback', require('./routes/feedbackRoutes'));
 
 app.use(errorHandler);
 

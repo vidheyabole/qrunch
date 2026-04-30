@@ -15,6 +15,11 @@ import CartPage from './pages/customer/CartPage';
 import OrderConfirmationPage from './pages/customer/OrderConfirmationPage';
 import Layout from './components/common/Layout';
 import Loader from './components/common/Loader';
+import StaffLoginPage from './pages/staff/StaffLoginPage';
+import StaffDashboard from './pages/staff/StaffDashboard';
+import StaffPage from './pages/dashboard/StaffPage';
+import StaffOrderPage from './pages/staff/StaffOrderPage';
+import ProfilePage from './pages/dashboard/ProfilePage';
 
 const PrivateRoute = ({ children }) => {
   const { owner, loading } = useAuth();
@@ -25,21 +30,30 @@ const PrivateRoute = ({ children }) => {
 export default function App() {
   return (
     <Routes>
-      <Route path="/login"                element={<LoginPage />} />
-      <Route path="/register"             element={<RegisterPage />} />
-      <Route path="/auth/google/callback" element={<GoogleCallbackPage />} />
+      <Route path="/login"                   element={<LoginPage />} />
+      <Route path="/register"                element={<RegisterPage />} />
+      <Route path="/auth/google/callback"    element={<GoogleCallbackPage />} />
+      <Route path="/dashboard/profile" element={<PrivateRoute><ProfilePage /></PrivateRoute>} />
 
-      <Route path="/dashboard"            element={<PrivateRoute><DashboardHome /></PrivateRoute>} />
-      <Route path="/dashboard/menu"       element={<PrivateRoute><MenuPage /></PrivateRoute>} />
-      <Route path="/dashboard/tables"     element={<PrivateRoute><TablesPage /></PrivateRoute>} />
-      <Route path="/dashboard/orders"     element={<PrivateRoute><OrdersPage /></PrivateRoute>} />
-      <Route path="/dashboard/analytics"  element={<PrivateRoute><AnalyticsPage /></PrivateRoute>} />
-      <Route path="/dashboard/inventory"  element={<PrivateRoute><InventoryPage /></PrivateRoute>} />
+      {/* Staff routes */}
+      <Route path="/staff/login"             element={<StaffLoginPage />} />
+      <Route path="/staff"                   element={<StaffDashboard />} />
+      <Route path="/staff/order/:tableId"    element={<StaffOrderPage />} />
 
-      <Route path="/order/:restaurantId/:tableId"                    element={<CustomerLandingPage />} />
-      <Route path="/order/:restaurantId/:tableId/menu"               element={<CustomerMenuPage />} />
-      <Route path="/order/:restaurantId/:tableId/cart"               element={<CartPage />} />
-      <Route path="/order/:restaurantId/:tableId/confirmed/:orderId" element={<OrderConfirmationPage />} />
+      {/* Owner routes */}
+      <Route path="/dashboard/staff"         element={<PrivateRoute><StaffPage /></PrivateRoute>} />
+      <Route path="/dashboard"               element={<PrivateRoute><DashboardHome /></PrivateRoute>} />
+      <Route path="/dashboard/menu"          element={<PrivateRoute><MenuPage /></PrivateRoute>} />
+      <Route path="/dashboard/tables"        element={<PrivateRoute><TablesPage /></PrivateRoute>} />
+      <Route path="/dashboard/orders"        element={<PrivateRoute><OrdersPage /></PrivateRoute>} />
+      <Route path="/dashboard/analytics"     element={<PrivateRoute><AnalyticsPage /></PrivateRoute>} />
+      <Route path="/dashboard/inventory"     element={<PrivateRoute><InventoryPage /></PrivateRoute>} />
+
+      {/* Customer routes */}
+      <Route path="/order/:restaurantId/:tableId"                      element={<CustomerLandingPage />} />
+      <Route path="/order/:restaurantId/:tableId/menu"                  element={<CustomerMenuPage />} />
+      <Route path="/order/:restaurantId/:tableId/cart"                  element={<CartPage />} />
+      <Route path="/order/:restaurantId/:tableId/confirmed/:orderId"    element={<OrderConfirmationPage />} />
 
       <Route path="*" element={<Navigate to="/login" />} />
     </Routes>

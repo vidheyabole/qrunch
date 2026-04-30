@@ -1,25 +1,12 @@
 import { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { useTheme } from '../../hooks/useTheme';
 import toast from 'react-hot-toast';
-import { connectGoogleAccount, disconnectGoogleAccount, initiateGoogleLogin } from '../../api/authApi';
-
-const COMING_SOON = [
-  { icon: '📱', title: 'QR Code Generator',  desc: 'Generate unique QR codes for each table.' },
-  { icon: '📊', title: 'Analytics',          desc: 'View revenue, top items, and peak hours.' },
-  { icon: '📦', title: 'Inventory Tracking', desc: 'Manage stock and hide sold-out items automatically.' },
-  { icon: '👥', title: 'Staff Roles',        desc: 'Give your team the right level of access.' },
-];
 
 export default function DashboardHome() {
-  const { owner, currentRestaurant, restaurants, addRestaurant, updateOwner } = useAuth();
-  const { dark } = useTheme();
-  const token = localStorage.getItem('qrunch_token');
-
-  const [showModal, setShowModal]     = useState(false);
-  const [newName, setNewName]         = useState('');
-  const [adding, setAdding]           = useState(false);
-  const [disconnecting, setDisconnecting] = useState(false);
+  const { owner, currentRestaurant, restaurants, addRestaurant } = useAuth();
+  const [showModal, setShowModal] = useState(false);
+  const [newName,   setNewName]   = useState('');
+  const [adding,    setAdding]    = useState(false);
 
   const trialDaysLeft = owner?.trialEnds
     ? Math.max(0, Math.ceil((new Date(owner.trialEnds) - new Date()) / (1000 * 60 * 60 * 24)))
@@ -38,26 +25,15 @@ export default function DashboardHome() {
     } finally { setAdding(false); }
   };
 
-  const handleDisconnectGoogle = async () => {
-    if (!window.confirm('Disconnect your Google account?')) return;
-    setDisconnecting(true);
-    try {
-      await disconnectGoogleAccount(token);
-      updateOwner({ authMethod: 'email', googleId: null });
-      toast.success('Google account disconnected');
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to disconnect');
-    } finally { setDisconnecting(false); }
-  };
-
   return (
     <div>
       {/* Welcome Banner */}
       <div className="bg-orange-500 text-white rounded-2xl p-6 mb-6 shadow">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
-            {owner?.avatar && (
-              <img src={owner.avatar} alt="avatar" className="w-12 h-12 rounded-full border-2 border-white/40 shrink-0" />
+            {(owner?.profilePicture || owner?.avatar) && (
+              <img src={owner.profilePicture || owner.avatar} alt="avatar"
+                className="w-12 h-12 rounded-full border-2 border-white/40 shrink-0 object-cover" />
             )}
             <div>
               <h2 className="text-2xl font-bold">Welcome to QRunch, {owner?.ownerName?.split(' ')[0]}! 🎉</h2>
@@ -78,7 +54,7 @@ export default function DashboardHome() {
       </div>
 
       {/* Subscription Status */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-4 flex items-center gap-3">
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6 flex items-center gap-3">
         <div className={`w-3 h-3 rounded-full ${owner?.subscriptionActive ? 'bg-green-400' : 'bg-red-400'}`} />
         <p className="text-sm text-gray-600 dark:text-gray-400">
           Subscription:{' '}
@@ -86,46 +62,6 @@ export default function DashboardHome() {
             {owner?.subscriptionActive ? 'Active' : 'Inactive'}
           </span>
         </p>
-      </div>
-
-      {/* Google Account Connection */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <img src="https://www.google.com/favicon.ico" alt="Google" className="w-5 h-5" />
-          <div>
-            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Google Account</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">
-              {owner?.authMethod === 'google' || owner?.authMethod === 'both'
-                ? `Connected — ${owner.email}`
-                : 'Not connected'}
-            </p>
-          </div>
-        </div>
-        {owner?.authMethod === 'email' ? (
-          <button onClick={initiateGoogleLogin}
-            className="text-sm bg-orange-500 hover:bg-orange-600 text-white px-4 py-1.5 rounded-lg transition font-medium">
-            Connect
-          </button>
-        ) : owner?.authMethod === 'both' ? (
-          <button onClick={handleDisconnectGoogle} disabled={disconnecting}
-            className="text-sm border border-red-200 dark:border-red-900 text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 px-4 py-1.5 rounded-lg transition">
-            {disconnecting ? 'Disconnecting...' : 'Disconnect'}
-          </button>
-        ) : (
-          <span className="text-xs text-green-500 font-medium">✅ Google only</span>
-        )}
-      </div>
-
-      {/* Coming Soon */}
-      <h3 className="text-gray-700 dark:text-gray-300 font-semibold text-lg mb-4">Coming your way 🚀</h3>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {COMING_SOON.map(({ icon, title, desc }) => (
-          <div key={title} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-md transition">
-            <div className="text-3xl mb-3">{icon}</div>
-            <h4 className="font-semibold text-gray-800 dark:text-gray-100 text-sm">{title}</h4>
-            <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">{desc}</p>
-          </div>
-        ))}
       </div>
 
       {/* Add Restaurant Modal */}

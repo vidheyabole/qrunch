@@ -7,18 +7,28 @@ export const CartProvider = ({ children }) => {
 
   const addToCart = (item) => {
     setCartItems(prev => {
-      // Match by itemId + same modifiers + same instructions
-      const idx = prev.findIndex(c =>
-        c.menuItemId === item.menuItemId &&
-        JSON.stringify(c.selectedModifiers) === JSON.stringify(item.selectedModifiers) &&
-        c.specialInstructions === item.specialInstructions
-      );
+      // Normalize the item ID — handle both _id and menuItemId
+      const itemId = item._id || item.menuItemId;
+
+      const idx = prev.findIndex(c => {
+        const cId = c._id || c.menuItemId;
+        return cId === itemId &&
+          JSON.stringify(c.selectedModifiers) === JSON.stringify(item.selectedModifiers) &&
+          c.specialInstructions === item.specialInstructions;
+      });
+
       if (idx !== -1) {
         const updated = [...prev];
-        updated[idx] = { ...updated[idx], quantity: updated[idx].quantity + item.quantity };
+        updated[idx] = { ...updated[idx], quantity: updated[idx].quantity + (item.qty || item.quantity || 1) };
         return updated;
       }
-      return [...prev, { ...item, cartId: Date.now() + Math.random() }];
+
+      return [...prev, {
+        ...item,
+        menuItemId: itemId,        // normalize to menuItemId
+        quantity: item.qty || item.quantity || 1,
+        cartId: Date.now() + Math.random()
+      }];
     });
   };
 
@@ -32,10 +42,10 @@ export const CartProvider = ({ children }) => {
 
   const clearCart = () => setCartItems([]);
 
-  const totalItems  = cartItems.reduce((s, c) => s + c.quantity, 0);
+  const totalItems = cartItems.reduce((s, c) => s + (c.quantity || c.qty || 1), 0);
   const totalAmount = cartItems.reduce((s, c) => {
     const modExtra = (c.selectedModifiers || []).reduce((ms, m) => ms + (m.extraPrice || 0), 0);
-    return s + (c.price + modExtra) * c.quantity;
+    return s + (c.price + modExtra) * (c.quantity || c.qty || 1);
   }, 0);
 
   return (
