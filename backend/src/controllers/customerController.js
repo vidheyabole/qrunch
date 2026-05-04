@@ -216,3 +216,75 @@ exports.getRecommendations = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+// ── GET /api/customer/:restaurantId/foryou ───────────────────
+// Personalized items by name+phone, fallback to most popular
+exports.getForYou = async (req, res) => {
+  try {
+    const { restaurantId } = req.params;
+    const { name, phone, lang = 'en' } = req.query;
+
+    let personalItemIds = [];
+
+    // ── Try personal history first ────────────────────────
+    if (name?.trim() || phone?.trim()) {
+      const filter = { restaurant: restaurantId };
+      const orConditions = [];
+      if (name?.trim())  orConditions.push({ customerName:  { $regex: new RegExp(`^${name.trim()}$`, 'i') } });
+      if (phone?.trim()) orConditions.push({ customerPhone: phone.trim() });
+      if (orConditions.length) filter.$or = orConditions;
+
+      const pastOrders = await Order.find(filter).sort({ createdAt: -1 }).limit(50);
+
+      if (pastOrders.length > 0) {
+        const itemCount = {};
+        pastOrders.forEach(order => {
+          order.items.forEach(item => {
+            const id = item.menuItemId?.toString() || item.menuItem?.toString();
+            if (id) itemCount[id] = (itemCount[id] || 0) + (item.quantity || 1);
+          });
+        });
+        personalItemIds = Object.entries(itemCount)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 6)
+          .map(([id]) => id);
+      }
+    }
+
+    // ── Fallback: most popular across restaurant ──────────
+    if (personalItemIds.length === 0) {
+      const allOrders = await Order.find({ restaurant: restaurantId }).limit(500);
+      const popCount  = {};
+      allOrders.forEach(order => {
+        order.items.forEach(item => {
+          const id = item.menuItemId?.toString() || item.menuItem?.toString();
+          if (id) popCount[id] = (popCount[id] || 0) + (item.quantity || 1);
+        });
+      });
+      personalItemIds = Object.entries(popCount)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([id]) => id);
+    }
+
+    if (!personalItemIds.length) return res.json({ items: [], isPersonal: false });
+
+    const items = await MenuItem.find({
+      _id:         { $in: personalItemIds },
+      restaurant:  restaurantId,
+      isAvailable: true
+    });
+
+    // Preserve order (most ordered first)
+    const ordered = personalItemIds
+      .map(id => items.find(i => i._id.toString() === id))
+      .filter(Boolean);
+
+    const translated  = await getTranslatedItems(ordered, lang);
+    const isPersonal  = !!(name?.trim() || phone?.trim()) && ordered.length > 0;
+
+    res.json({ items: translated, isPersonal });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};

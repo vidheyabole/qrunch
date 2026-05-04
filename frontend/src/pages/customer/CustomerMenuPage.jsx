@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useCart } from '../../context/CartContext';
-import { getPublicMenu, getRecommendations } from '../../api/customerApi';
+import { getPublicMenu, getRecommendations, getForYou } from '../../api/customerApi';
 import LanguageSelector from '../../components/common/LanguageSelector';
 import { requestBill, getActiveSession } from '../../api/sessionApi';
 import { useTheme } from '../../hooks/useTheme';
@@ -14,6 +14,10 @@ export default function CustomerMenuPage() {
   const { t, i18n } = useTranslation();
   const { cartItems, addToCart } = useCart();
   const { dark, toggleTheme } = useTheme();
+
+  const [forYouItems,   setForYouItems]   = useState([]);
+  const [isPersonal,    setIsPersonal]    = useState(false);
+  const [forYouLoading, setForYouLoading] = useState(false);
 
   const [hasActiveSession, setHasActiveSession] = useState(false);
   const [restaurant,       setRestaurant]        = useState(null);
@@ -46,7 +50,6 @@ export default function CustomerMenuPage() {
       if (data.restaurant?.name) {
         localStorage.setItem(`qrunch_restaurant_${restaurantId}`, data.restaurant.name);
       }
-      // ── Check for active session ──
       const session = await getActiveSession(restaurantId, tableId).catch(() => null);
       if (session && session.status !== 'closed') setHasActiveSession(true);
     } catch (err) { console.error(err); }
@@ -54,6 +57,20 @@ export default function CustomerMenuPage() {
   }, [restaurantId, tableId, lang]);
 
   useEffect(() => { loadMenu(); }, [loadMenu]);
+
+  // ── Load For You items ────────────────────────────────────
+  useEffect(() => {
+    if (!restaurantId) return;
+    const saved = (() => { try { return JSON.parse(localStorage.getItem('qrunch_customer') || '{}'); } catch { return {}; } })();
+    setForYouLoading(true);
+    getForYou(restaurantId, saved.name || '', saved.phone || '', lang)
+      .then(data => {
+        setForYouItems(data.items    || []);
+        setIsPersonal(data.isPersonal || false);
+      })
+      .catch(() => { setForYouItems([]); })
+      .finally(() => setForYouLoading(false));
+  }, [restaurantId, lang]);
 
   useEffect(() => {
     if (!selectedItem) { setRecs([]); return; }
@@ -65,7 +82,7 @@ export default function CustomerMenuPage() {
   const visibleItems = activeTab === 'all'
     ? items
     : activeTab === 'foryou'
-      ? items.filter(i => i.dietaryTags?.length > 0).slice(0, 6)
+      ? forYouItems
       : items.filter(i => i.category === activeTab || i.category?._id === activeTab);
 
   const getItemTotal = () => {
@@ -125,7 +142,6 @@ export default function CustomerMenuPage() {
               {dark ? '☀️' : '🌙'}
             </button>
             <LanguageSelector variant="compact" onSelect={(code) => { setLang(code); i18n.changeLanguage(code); }} />
-            {/* ── Track My Order button ── */}
             {hasActiveSession && (
               <button onClick={() => navigate(`/order/${restaurantId}/${tableId}/track`)}
                 className="text-xs font-semibold px-3 py-1.5 rounded-xl transition bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 active:scale-95">
@@ -149,11 +165,14 @@ export default function CustomerMenuPage() {
               ${activeTab === 'all' ? 'bg-orange-500 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'}`}>
             All
           </button>
+
+          {/* ── For You tab with personalisation indicator ── */}
           <button onClick={() => setActiveTab('foryou')}
-            className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition
+            className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition flex items-center gap-1
               ${activeTab === 'foryou' ? 'bg-orange-500 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'}`}>
-            {t('customer.forYou')}
+            {isPersonal ? '⭐' : '🔥'} {t('customer.forYou')}
           </button>
+
           {categories.map(cat => (
             <button key={cat._id} onClick={() => setActiveTab(cat._id)}
               className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition
@@ -187,7 +206,27 @@ export default function CustomerMenuPage() {
 
       {/* Items grid */}
       <div className="max-w-2xl mx-auto px-4 py-4 grid grid-cols-2 gap-3 pb-32">
-        {visibleItems.map(item => (
+
+        {/* ── For You subtitle ── */}
+        {activeTab === 'foryou' && (
+          <div className="col-span-2 mb-1">
+            {forYouLoading ? (
+              <p className="text-xs text-gray-400 text-center py-2">Loading recommendations...</p>
+            ) : isPersonal ? (
+              <p className="text-xs text-orange-500 font-medium">⭐ Based on your past orders</p>
+            ) : (
+              <p className="text-xs text-gray-400">🔥 Most popular at this restaurant</p>
+            )}
+          </div>
+        )}
+
+        {visibleItems.length === 0 && activeTab === 'foryou' && !forYouLoading ? (
+          <div className="col-span-2 flex flex-col items-center justify-center py-12 text-gray-400">
+            <span className="text-4xl mb-3">🍽️</span>
+            <p className="text-sm">No recommendations yet</p>
+            <p className="text-xs mt-1 text-gray-300">Order something to get personalised picks</p>
+          </div>
+        ) : visibleItems.map(item => (
           <button key={item._id} onClick={() => setSelectedItem(item)}
             className="bg-white dark:bg-gray-900 rounded-2xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800 text-left active:scale-95 transition">
             {item.imageUrl && (

@@ -32,3 +32,12 @@ export const getOrderStatus = async (restaurantId, tableId, orderId) => {
   if (!res.ok) throw new Error('Failed to get order status');
   return res.json();
 };
+
+export const getForYou = async (restaurantId, name, phone, lang = 'en') => {
+  const params = new URLSearchParams({ lang });
+  if (name?.trim())  params.append('name',  name.trim());
+  if (phone?.trim()) params.append('phone', phone.trim());
+  const res = await fetch(`/api/customer/${restaurantId}/foryou?${params}`);
+  if (!res.ok) return { items: [], isPersonal: false };
+  return res.json();
+};

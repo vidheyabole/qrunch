@@ -25,9 +25,10 @@ export default function CartPage() {
   const { cartItems, removeFromCart, clearCart } = useCart();
 
   const saved = (() => { try { return JSON.parse(localStorage.getItem('qrunch_customer') || '{}'); } catch { return {}; } })();
-  const [name,    setName]    = useState(saved.name  || '');
-  const [phone,   setPhone]   = useState(saved.phone || '');
-  const [placing, setPlacing] = useState(false);
+  const [name,      setName]      = useState(saved.name  || '');
+  const [phone,     setPhone]     = useState(saved.phone || '');
+  const [placing,   setPlacing]   = useState(false);
+  const [nameError, setNameError] = useState(false);
 
   // ── Restaurant settings (GST + payment methods) ──────────
   const [restaurantSettings, setRestaurantSettings] = useState(null);
@@ -38,7 +39,6 @@ export default function CartPage() {
       .then(r => r.json())
       .then(data => {
         setRestaurantSettings(data);
-        // Pre-select first available payment method
         const methods = data?.paymentMethods || {};
         const first = ['upi','cash','card','other'].find(m => methods[m]);
         if (first) setSelectedPayment(first);
@@ -49,13 +49,13 @@ export default function CartPage() {
   const currency = restaurantSettings?.region === 'usa' ? '$' : '₹';
 
   // ── GST calculations ─────────────────────────────────────
-  const gst         = restaurantSettings?.gst;
-  const gstEnabled  = gst?.enabled && gst?.rate > 0;
-  const gstRate     = gst?.rate || 0;
-  const subtotal    = cartItems.reduce((s, i) => s + i.price * i.qty, 0);
-  const gstAmount   = gstEnabled ? parseFloat((subtotal * gstRate / 100).toFixed(2)) : 0;
-  const cgst        = gstEnabled ? parseFloat((gstAmount / 2).toFixed(2)) : 0;
-  const sgst        = gstEnabled ? parseFloat((gstAmount / 2).toFixed(2)) : 0;
+  const gst        = restaurantSettings?.gst;
+  const gstEnabled = gst?.enabled && gst?.rate > 0;
+  const gstRate    = gst?.rate || 0;
+  const subtotal   = cartItems.reduce((s, i) => s + i.price * i.qty, 0);
+  const gstAmount  = gstEnabled ? parseFloat((subtotal * gstRate / 100).toFixed(2)) : 0;
+  const cgst       = gstEnabled ? parseFloat((gstAmount / 2).toFixed(2)) : 0;
+  const sgst       = gstEnabled ? parseFloat((gstAmount / 2).toFixed(2)) : 0;
   const totalAmount = subtotal + gstAmount;
 
   // Available payment methods configured by owner
@@ -63,8 +63,16 @@ export default function CartPage() {
     ? Object.entries(restaurantSettings.paymentMethods).filter(([_, v]) => v).map(([k]) => k)
     : ['cash', 'upi'];
 
+  // ── Place order with name validation ─────────────────────
   const handlePlaceOrder = async () => {
     if (!cartItems.length) return;
+    if (!name.trim()) {
+      setNameError(true);
+      // Scroll to name field
+      document.getElementById('customer-name-input')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    setNameError(false);
     setPlacing(true);
     try {
       const items = cartItems.map(i => ({
@@ -75,17 +83,14 @@ export default function CartPage() {
         selectedMods: i.selectedMods || [],
         specialNote:  i.specialNote  || ''
       }));
-
-      // Store payment preference for later (used when requesting bill)
       if (selectedPayment) {
         localStorage.setItem(`qrunch_payment_${restaurantId}_${tableId}`, selectedPayment);
       }
-
       const order = await placeOrder(restaurantId, tableId, {
         items,
         customerName:  name,
         customerPhone: phone,
-        totalAmount:   subtotal,  // store pre-tax amount on order
+        totalAmount:   subtotal,
         gstAmount,
         gstRate,
       });
@@ -142,17 +147,39 @@ export default function CartPage() {
           ))}
         </div>
 
-        {/* Customer details */}
+        {/* ── Customer details ── */}
         <div className="bg-white dark:bg-gray-900 rounded-2xl p-4 mt-4 shadow-sm">
-          <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{t('customer.yourDetails')}</p>
-          <p className="text-xs text-gray-400 mb-3">{t('customer.reorderNote')}</p>
+          <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">{t('customer.yourDetails')}</p>
+          <p className="text-xs text-gray-400 mb-3">Your name will be called when your order is ready 📣</p>
           <div className="flex flex-col gap-2">
-            <input type="text" value={name} onChange={e => setName(e.target.value)}
-              placeholder={`${t('customer.yourName')} (${t('customer.optional')})`}
-              className="border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
-            <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
+            {/* Name — required */}
+            <div>
+              <input
+                id="customer-name-input"
+                type="text"
+                value={name}
+                onChange={e => { setName(e.target.value); if (e.target.value.trim()) setNameError(false); }}
+                placeholder="Your Name *"
+                className={`w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2
+                  bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100
+                  ${nameError
+                    ? 'border-red-400 focus:ring-red-400'
+                    : 'border-gray-200 dark:border-gray-700 focus:ring-orange-400'}`}
+              />
+              {nameError && (
+                <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+                  <span>⚠️</span> Please enter your name so we can call you when your order is ready
+                </p>
+              )}
+            </div>
+            {/* Phone — optional */}
+            <input
+              type="tel"
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
               placeholder={`${t('customer.phoneNumber')} (${t('customer.optional')})`}
-              className="border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
+              className="border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+            />
           </div>
         </div>
 
@@ -186,15 +213,11 @@ export default function CartPage() {
               <span>{currency}{(item.price * item.qty).toFixed(2)}</span>
             </div>
           ))}
-
           <div className="border-t border-gray-100 dark:border-gray-800 mt-2 pt-2">
-            {/* Subtotal */}
             <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 py-1">
               <span>Subtotal</span>
               <span>{currency}{subtotal.toFixed(2)}</span>
             </div>
-
-            {/* GST breakdown */}
             {gstEnabled && (
               <>
                 <div className="flex justify-between text-sm text-gray-400 py-0.5">
@@ -210,8 +233,6 @@ export default function CartPage() {
                 )}
               </>
             )}
-
-            {/* Total */}
             <div className="flex justify-between font-bold text-gray-800 dark:text-gray-100 pt-2 mt-1 border-t border-gray-100 dark:border-gray-800">
               <span>{t('customer.total')}</span>
               <span className="text-orange-500">{currency}{totalAmount.toFixed(2)}</span>
@@ -223,6 +244,11 @@ export default function CartPage() {
       {/* Sticky Place Order */}
       <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 px-4 py-4 z-10">
         <div className="max-w-2xl mx-auto">
+          {!name.trim() && (
+            <p className="text-xs text-center text-gray-400 mb-2">
+              ☝️ Enter your name above to place your order
+            </p>
+          )}
           <button onClick={handlePlaceOrder} disabled={placing}
             className="w-full bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 active:scale-95 text-white font-bold py-4 rounded-2xl transition flex items-center justify-between px-6 shadow-lg shadow-orange-100">
             <span>{placing ? t('customer.placing') : t('customer.placeOrder')}</span>
