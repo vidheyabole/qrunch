@@ -59,6 +59,10 @@ app.use('/api/sessions', require('./routes/sessionRoutes'));
 
 app.use('/api/feedback', require('./routes/feedbackRoutes'));
 
+app.use('/api/expenses', require('./routes/expenseRoutes'));
+
+app.use('/api/restaurants', require('./routes/restaurantRoutes'));
+
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;

@@ -12,54 +12,51 @@ export default function MenuPage() {
   const { t } = useTranslation();
 
   const restaurantId = currentRestaurant?._id;
-  const currency     = owner?.region === 'india' ? '₹' : '$';
+  const currency = owner?.region === 'india' ? '₹' : '$';
   const getAuthHeader = () => ({ Authorization: `Bearer ${owner?.token}` });
 
-  // ── Categories ──────────────────────────────────────────────
-  const [categories,   setCategories]   = useState([]);
-  const [activecat,    setActiveCat]    = useState(null);
+  const [categories, setCategories] = useState([]);
+  const [activecat, setActiveCat] = useState(null);
   const [showCatModal, setShowCatModal] = useState(false);
-  const [editCat,      setEditCat]      = useState(null);
-  const [catName,      setCatName]      = useState('');
-  const [savingCat,    setSavingCat]    = useState(false);
-  const [loading,      setLoading]      = useState(true);
+  const [editCat, setEditCat] = useState(null);
+  const [catName, setCatName] = useState('');
+  const [savingCat, setSavingCat] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // ── Items ────────────────────────────────────────────────────
-  const [items,      setItems]      = useState([]);
-  const [showModal,  setShowModal]  = useState(false);
-  const [editItem,   setEditItem]   = useState(null);
-  const [saving,     setSaving]     = useState(false);
+  const [items, setItems] = useState([]);
+  const [showModal, setShowModal] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [saving, setSaving] = useState(false);
 
-  // ── Form fields ──────────────────────────────────────────────
-  const [name,          setName]          = useState('');
-  const [description,   setDescription]   = useState('');
-  const [price,         setPrice]         = useState('');
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [price, setPrice] = useState('');
   const [selectedCatId, setSelectedCatId] = useState('');
-  const [isAvailable,   setIsAvailable]   = useState(true);
-  const [dietaryTags,   setDietaryTags]   = useState([]);
-  const [modifiers,     setModifiers]     = useState([]);
-  const [imageFile,     setImageFile]     = useState(null);
-  const [imagePreview,  setImagePreview]  = useState('');
+  const [isAvailable, setIsAvailable] = useState(true);
+  const [dietaryTags, setDietaryTags] = useState([]);
+  const [modifiers, setModifiers] = useState([]);
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState('');
   const [existingImage, setExistingImage] = useState('');
 
-  // ── AI states ────────────────────────────────────────────────
   const [generatingDesc, setGeneratingDesc] = useState(false);
   const [generatingTags, setGeneratingTags] = useState(false);
-  const [generatingImg,  setGeneratingImg]  = useState(false);
+  const [generatingImg, setGeneratingImg] = useState(false);
   const [aiTagSuggestions, setAiTagSuggestions] = useState([]);
 
-  // ── Load categories ──────────────────────────────────────────
+  const [ingredients, setIngredients] = useState('');
+  const [customTagInput, setCustomTagInput] = useState('');
+
   const loadCategories = useCallback(async () => {
     if (!restaurantId || !owner?.token) return;
     setLoading(true);
-    const res  = await fetch(`/api/menu/categories/${restaurantId}`, { headers: getAuthHeader() });
+    const res = await fetch(`/api/menu/categories/${restaurantId}`, { headers: getAuthHeader() });
     const data = await res.json();
     setCategories(Array.isArray(data) ? data : []);
     if (Array.isArray(data) && data.length && !activecat) setActiveCat(data[0]._id);
     setLoading(false);
   }, [restaurantId, owner?.token]);
 
-  // ── Load items ───────────────────────────────────────────────
   const loadItems = useCallback(async () => {
     if (!restaurantId || !owner?.token || categories.length === 0) return;
     const all = await Promise.all(
@@ -71,26 +68,25 @@ export default function MenuPage() {
   }, [restaurantId, owner?.token, categories]);
 
   useEffect(() => { loadCategories(); }, [loadCategories]);
-  useEffect(() => { loadItems(); },      [loadItems]);
+  useEffect(() => { loadItems(); }, [loadItems]);
 
   const visibleItems = items.filter(i =>
     i.category === activecat || i.category?._id === activecat
   );
 
-  // ── Category CRUD ────────────────────────────────────────────
-  const openAddCat  = () => { setEditCat(null); setCatName(''); setShowCatModal(true); };
+  const openAddCat = () => { setEditCat(null); setCatName(''); setShowCatModal(true); };
   const openEditCat = (cat) => { setEditCat(cat); setCatName(cat.name); setShowCatModal(true); };
 
   const saveCat = async (e) => {
     e.preventDefault();
     if (!catName.trim()) return;
     setSavingCat(true);
-    const url    = editCat ? `/api/menu/categories/${editCat._id}` : '/api/menu/categories';
+    const url = editCat ? `/api/menu/categories/${editCat._id}` : '/api/menu/categories';
     const method = editCat ? 'PUT' : 'POST';
     await fetch(url, {
       method,
       headers: { ...getAuthHeader(), 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ name: catName, restaurantId })
+      body: JSON.stringify({ name: catName, restaurantId })
     });
     setSavingCat(false);
     setShowCatModal(false);
@@ -105,17 +101,17 @@ export default function MenuPage() {
     loadItems();
   };
 
-  // ── Item modal helpers ───────────────────────────────────────
   const resetForm = () => {
     setName(''); setDescription(''); setPrice('');
     setSelectedCatId(activecat || ''); setIsAvailable(true);
     setDietaryTags([]); setModifiers([]);
     setImageFile(null); setImagePreview(''); setExistingImage('');
     setAiTagSuggestions([]);
+    setIngredients('');
+setCustomTagInput('');
   };
 
   const openAdd = () => { resetForm(); setEditItem(null); setShowModal(true); };
-
   const openEdit = (item) => {
     setEditItem(item);
     setName(item.name);
@@ -130,48 +126,37 @@ export default function MenuPage() {
     setExistingImage(item.imageUrl || '');
     setAiTagSuggestions([]);
     setShowModal(true);
+    setIngredients((item.ingredients || []).join(', '));
+setCustomTagInput('');
   };
 
-  const toggleTag = (tag) =>
-    setDietaryTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
-
-  // ── Modifiers ────────────────────────────────────────────────
-  const addGroup     = () => setModifiers(m => [...m, { groupName: '', options: [{ label: '', extraPrice: 0 }] }]);
-  const removeGroup  = (gi) => setModifiers(m => m.filter((_, i) => i !== gi));
-  const updateGroup  = (gi, val) => setModifiers(m => m.map((g, i) => i === gi ? { ...g, groupName: val } : g));
-  const addOption    = (gi) => setModifiers(m => m.map((g, i) => i === gi ? { ...g, options: [...g.options, { label: '', extraPrice: 0 }] } : g));
+  const toggleTag = (tag) => setDietaryTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
+  const addGroup = () => setModifiers(m => [...m, { groupName: '', options: [{ label: '', extraPrice: 0 }] }]);
+  const removeGroup = (gi) => setModifiers(m => m.filter((_, i) => i !== gi));
+  const updateGroup = (gi, val) => setModifiers(m => m.map((g, i) => i === gi ? { ...g, groupName: val } : g));
+  const addOption = (gi) => setModifiers(m => m.map((g, i) => i === gi ? { ...g, options: [...g.options, { label: '', extraPrice: 0 }] } : g));
   const removeOption = (gi, oi) => setModifiers(m => m.map((g, i) => i === gi ? { ...g, options: g.options.filter((_, j) => j !== oi) } : g));
   const updateOption = (gi, oi, field, val) => setModifiers(m => m.map((g, i) =>
     i === gi ? { ...g, options: g.options.map((o, j) => j === oi ? { ...o, [field]: field === 'extraPrice' ? parseFloat(val) || 0 : val } : o) } : g
   ));
 
-  // ── AI: Generate Description ─────────────────────────────────
   const handleGenerateDesc = async () => {
     if (!name.trim()) return alert('Enter item name first');
     setGeneratingDesc(true);
     try {
-      const res  = await fetch('/api/ai/describe', {
-        method:  'POST',
-        headers: { ...getAuthHeader(), 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ itemName: name, restaurantId })
-      });
+      const res = await fetch('/api/ai/describe', { method: 'POST', headers: { ...getAuthHeader(), 'Content-Type': 'application/json' }, body: JSON.stringify({ itemName: name, restaurantId }) });
       const data = await res.json();
       setDescription(data.description || '');
     } catch { /* silent */ }
     setGeneratingDesc(false);
   };
 
-  // ── AI: Suggest Dietary Tags ─────────────────────────────────
   const handleSuggestTags = async () => {
     if (!name.trim()) return alert('Enter item name first');
     setGeneratingTags(true);
     setAiTagSuggestions([]);
     try {
-      const res  = await fetch('/api/ai/suggest-tags', {
-        method:  'POST',
-        headers: { ...getAuthHeader(), 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ itemName: name, description })
-      });
+      const res = await fetch('/api/ai/suggest-tags', { method: 'POST', headers: { ...getAuthHeader(), 'Content-Type': 'application/json' }, body: JSON.stringify({ itemName: name, description }) });
       const data = await res.json();
       const suggested = data.tags || [];
       setAiTagSuggestions(suggested);
@@ -180,67 +165,58 @@ export default function MenuPage() {
     setGeneratingTags(false);
   };
 
-  // ── AI: Generate Image ───────────────────────────────────────
   const handleGenerateImage = async () => {
     if (!name.trim()) return alert('Enter item name first');
     setGeneratingImg(true);
     try {
-      const res  = await fetch('/api/images/generate', {
-        method:  'POST',
-        headers: { ...getAuthHeader(), 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ dishName: name, description, restaurantId })
-      });
+      const res = await fetch('/api/images/generate', { method: 'POST', headers: { ...getAuthHeader(), 'Content-Type': 'application/json' }, body: JSON.stringify({ dishName: name, description, restaurantId }) });
       const data = await res.json();
-      if (data.imageUrl) {
-        setExistingImage(data.imageUrl);
-        setImagePreview(data.imageUrl);
-        setImageFile(null);
-      }
+      if (data.imageUrl) { setExistingImage(data.imageUrl); setImagePreview(data.imageUrl); setImageFile(null); }
     } catch { /* silent */ }
     setGeneratingImg(false);
   };
 
-  // ── Save Item ────────────────────────────────────────────────
   const saveItem = async (e) => {
     e.preventDefault();
     if (!name.trim() || !price || !selectedCatId) return;
     setSaving(true);
-
     const formData = new FormData();
-    formData.append('name',          name);
-    formData.append('description',   description);
-    formData.append('price',         price);
-    formData.append('categoryId',    selectedCatId);
-    formData.append('restaurantId',  restaurantId);
-    formData.append('isAvailable',   isAvailable);
-    formData.append('dietaryTags',   JSON.stringify(dietaryTags));
-    formData.append('modifiers',     JSON.stringify(modifiers));
-    if (imageFile)                   formData.append('image', imageFile);
+    formData.append('name', name);
+    formData.append('description', description);
+    formData.append('price', price);
+    formData.append('categoryId', selectedCatId);
+    formData.append('restaurantId', restaurantId);
+    formData.append('isAvailable', isAvailable);
+    formData.append('dietaryTags', JSON.stringify(dietaryTags));
+    formData.append('modifiers', JSON.stringify(modifiers));
+    formData.append('ingredients', JSON.stringify(
+  ingredients.split(',').map(s => s.trim()).filter(Boolean)
+));
+    if (imageFile) formData.append('image', imageFile);
     if (!imageFile && existingImage) formData.append('generatedImageUrl', existingImage);
-
-    const url    = editItem ? `/api/menu/items/${editItem._id}` : '/api/menu/items';
+    const url = editItem ? `/api/menu/items/${editItem._id}` : '/api/menu/items';
     const method = editItem ? 'PUT' : 'POST';
     await fetch(url, { method, headers: getAuthHeader(), body: formData });
-
     setSaving(false);
     setShowModal(false);
     loadItems();
   };
 
-  // ── Delete Item ──────────────────────────────────────────────
   const deleteItem = async (itemId) => {
     if (!confirm('Delete this item?')) return;
     await fetch(`/api/menu/items/${itemId}`, { method: 'DELETE', headers: getAuthHeader() });
     loadItems();
   };
 
-  // ── Toggle availability ──────────────────────────────────────
+  // ── #14: Confirmation added ──────────────────────────────────
   const toggleAvailability = async (item) => {
+    const action = item.isAvailable ? 'mark as unavailable' : 'mark as available';
+    if (!confirm(`Are you sure you want to ${action} "${item.name}"?`)) return;
     setItems(prev => prev.map(i =>
       i._id === item._id ? { ...i, isAvailable: !i.isAvailable } : i
     ));
     await fetch(`/api/menu/items/${item._id}/toggle`, {
-      method:  'PATCH',
+      method: 'PATCH',
       headers: getAuthHeader()
     });
   };
@@ -387,8 +363,7 @@ export default function MenuPage() {
             <form onSubmit={saveCat} className="flex flex-col gap-4">
               <input type="text" value={catName} onChange={e => setCatName(e.target.value)}
                 placeholder={t('menu.categoryPlaceholder')} autoFocus
-                className="border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-              />
+                className="border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
               <div className="flex gap-3">
                 <button type="button" onClick={() => setShowCatModal(false)}
                   className="flex-1 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 py-2.5 rounded-xl text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition">
@@ -426,8 +401,7 @@ export default function MenuPage() {
                 <label className="text-sm text-gray-600 dark:text-gray-400 mb-1.5 block">{t('menu.itemName')} *</label>
                 <input type="text" value={name} onChange={e => setName(e.target.value)} required
                   placeholder={t('menu.itemNamePlaceholder')}
-                  className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-                />
+                  className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1.5">
@@ -439,15 +413,13 @@ export default function MenuPage() {
                 </div>
                 <textarea value={description} onChange={e => setDescription(e.target.value)}
                   rows={3} placeholder={t('menu.descPlaceholder')}
-                  className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 resize-none"
-                />
+                  className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 resize-none" />
               </div>
               <div>
                 <label className="text-sm text-gray-600 dark:text-gray-400 mb-1.5 block">{t('menu.price')} ({currency}) *</label>
                 <input type="number" value={price} onChange={e => setPrice(e.target.value)}
                   min="0" step="0.01" required placeholder="0.00"
-                  className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-                />
+                  className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1.5">
@@ -495,6 +467,50 @@ export default function MenuPage() {
                     </button>
                   ))}
                 </div>
+                {/* ── Custom tag input (#2) ── */}
+                <div className="flex gap-2 mt-2">
+                  <input type="text" value={customTagInput} onChange={e => setCustomTagInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const tag = customTagInput.trim();
+                        if (tag && !dietaryTags.includes(tag)) setDietaryTags(prev => [...prev, tag]);
+                        setCustomTagInput('');
+                      }
+                    }}
+                    placeholder="Add custom tag… (press Enter)"
+                    className="flex-1 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-orange-400" />
+                  <button type="button"
+                    onClick={() => {
+                      const tag = customTagInput.trim();
+                      if (tag && !dietaryTags.includes(tag)) setDietaryTags(prev => [...prev, tag]);
+                      setCustomTagInput('');
+                    }}
+                    className="text-xs bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-xl transition font-medium">
+                    + Add
+                  </button>
+                </div>
+                {/* Custom tags (not in default list) */}
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {dietaryTags.filter(t => !DIETARY_OPTIONS.includes(t)).map(tag => (
+                    <span key={tag} className="inline-flex items-center gap-1 text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 px-2.5 py-1 rounded-full">
+                      {tag}
+                      <button type="button" onClick={() => setDietaryTags(prev => prev.filter(t => t !== tag))} className="hover:text-red-500 transition">✕</button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── Ingredients (#4) ── */}
+              <div>
+                <label className="text-sm text-gray-600 dark:text-gray-400 mb-1.5 block">
+                  Ingredients
+                  <span className="text-xs text-gray-400 ml-1">(optional, comma-separated)</span>
+                </label>
+                <textarea value={ingredients} onChange={e => setIngredients(e.target.value)}
+                  rows={2} placeholder="e.g. Paneer, Tomato, Onion, Spices..."
+                  className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 resize-none" />
+                <p className="text-xs text-gray-400 mt-1">Customers can view this on the menu</p>
               </div>
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -509,20 +525,17 @@ export default function MenuPage() {
                     <div className="flex items-center gap-2 mb-2">
                       <input type="text" value={group.groupName} onChange={e => updateGroup(gi, e.target.value)}
                         placeholder={t('menu.groupName')}
-                        className="flex-1 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-orange-400"
-                      />
+                        className="flex-1 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-orange-400" />
                       <button type="button" onClick={() => removeGroup(gi)} className="text-red-400 hover:text-red-600 text-sm">✕</button>
                     </div>
                     {group.options.map((opt, oi) => (
                       <div key={oi} className="flex items-center gap-2 mb-1.5">
                         <input type="text" value={opt.label} onChange={e => updateOption(gi, oi, 'label', e.target.value)}
                           placeholder={t('menu.optionLabel')}
-                          className="flex-1 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 rounded-lg px-3 py-1.5 text-xs focus:outline-none"
-                        />
+                          className="flex-1 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 rounded-lg px-3 py-1.5 text-xs focus:outline-none" />
                         <input type="number" value={opt.extraPrice} onChange={e => updateOption(gi, oi, 'extraPrice', e.target.value)}
                           placeholder={t('menu.extraPrice')} min="0" step="0.5"
-                          className="w-20 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
-                        />
+                          className="w-20 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 rounded-lg px-2 py-1.5 text-xs focus:outline-none" />
                         <button type="button" onClick={() => removeOption(gi, oi)} className="text-gray-400 hover:text-red-500 text-sm">✕</button>
                       </div>
                     ))}

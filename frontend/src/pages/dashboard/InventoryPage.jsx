@@ -4,23 +4,35 @@ import { useAuth } from '../../hooks/useAuth';
 
 const UNITS = ['kg', 'g', 'lbs', 'oz', 'litre', 'ml', 'bottles', 'cans', 'packets', 'pieces', 'dozen', 'bags'];
 
+const CSV_COLUMNS = [
+  { key: 'name',              label: 'Name',                default: true  },
+  { key: 'quantity',          label: 'Quantity',            default: true  },
+  { key: 'unit',              label: 'Unit',                default: true  },
+  { key: 'lowStockThreshold', label: 'Low Stock Threshold', default: true  },
+  { key: 'status',            label: 'Status',              default: true  },
+  { key: 'createdAt',         label: 'Date Added',          default: false },
+];
+
 export default function InventoryPage() {
   const { owner, currentRestaurant } = useAuth();
   const { t } = useTranslation();
 
   const restaurantId  = currentRestaurant?._id;
-  const currency = owner?.region === 'india' ? '₹' : '$';
   const getAuthHeader = () => ({ Authorization: `Bearer ${owner?.token}` });
 
-  const [items,      setItems]      = useState([]);
-  const [loading,    setLoading]    = useState(true);
-  const [filter,     setFilter]     = useState('all');
-  const [showModal,  setShowModal]  = useState(false);
-  const [editItem,   setEditItem]   = useState(null);
-  const [saving,     setSaving]     = useState(false);
-  const [bulkMode,   setBulkMode]   = useState(false);
-  const [bulkEdits,  setBulkEdits]  = useState({});
-  const [savingBulk, setSavingBulk] = useState(false);
+  const [items,         setItems]         = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [filter,        setFilter]        = useState('all');
+  const [showModal,     setShowModal]     = useState(false);
+  const [editItem,      setEditItem]      = useState(null);
+  const [saving,        setSaving]        = useState(false);
+  const [bulkMode,      setBulkMode]      = useState(false);
+  const [bulkEdits,     setBulkEdits]     = useState({});
+  const [savingBulk,    setSavingBulk]    = useState(false);
+  const [showExport,    setShowExport]    = useState(false);
+  const [exportCols,    setExportCols]    = useState(
+    CSV_COLUMNS.reduce((acc, c) => ({ ...acc, [c.key]: c.default }), {})
+  );
 
   const [itemName,   setItemName]   = useState('');
   const [quantity,   setQuantity]   = useState('');
@@ -45,9 +57,7 @@ export default function InventoryPage() {
     return true;
   });
 
-  const resetForm = () => {
-    setItemName(''); setQuantity(''); setUnit('kg'); setCustomUnit(''); setThreshold(5);
-  };
+  const resetForm = () => { setItemName(''); setQuantity(''); setUnit('kg'); setCustomUnit(''); setThreshold(5); };
 
   const openAdd  = () => { resetForm(); setEditItem(null); setShowModal(true); };
   const openEdit = (item) => {
@@ -67,20 +77,10 @@ export default function InventoryPage() {
     e.preventDefault();
     if (!itemName.trim() || quantity === '' || !finalUnit) return;
     setSaving(true);
-    const body = {
-      name:              itemName,
-      quantity:          parseFloat(quantity),
-      unit:              finalUnit,
-      lowStockThreshold: parseFloat(threshold),
-      restaurantId:      restaurantId
-    };
+    const body = { name: itemName, quantity: parseFloat(quantity), unit: finalUnit, lowStockThreshold: parseFloat(threshold), restaurantId };
     const url    = editItem ? `/api/inventory/${editItem._id}` : '/api/inventory';
     const method = editItem ? 'PUT' : 'POST';
-    await fetch(url, {
-      method,
-      headers: { ...getAuthHeader(), 'Content-Type': 'application/json' },
-      body:    JSON.stringify(body)
-    });
+    await fetch(url, { method, headers: { ...getAuthHeader(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     setSaving(false);
     setShowModal(false);
     loadItems();
@@ -103,11 +103,7 @@ export default function InventoryPage() {
     setSavingBulk(true);
     await Promise.all(
       Object.entries(bulkEdits).map(([id, vals]) =>
-        fetch(`/api/inventory/${id}`, {
-          method:  'PUT',
-          headers: { ...getAuthHeader(), 'Content-Type': 'application/json' },
-          body:    JSON.stringify(vals)
-        })
+        fetch(`/api/inventory/${id}`, { method: 'PUT', headers: { ...getAuthHeader(), 'Content-Type': 'application/json' }, body: JSON.stringify(vals) })
       )
     );
     setSavingBulk(false);
@@ -115,20 +111,27 @@ export default function InventoryPage() {
     loadItems();
   };
 
-  const exportCSV = () => {
-    const header = 'Name,Quantity,Unit,Low Stock Threshold,Status\n';
-    const rows   = items.map(i => {
-      const status = i.quantity === 0 ? 'Out of Stock'
-        : i.quantity <= i.lowStockThreshold ? 'Low Stock' : 'In Stock';
-      return `"${i.name}",${i.quantity},${i.unit},${i.lowStockThreshold},${status}`;
+  const doExport = () => {
+    const selectedCols = CSV_COLUMNS.filter(c => exportCols[c.key]);
+    const header = selectedCols.map(c => c.label).join(',');
+    const rows   = items.map(item => {
+      const status = item.quantity === 0 ? 'Out of Stock'
+        : item.quantity <= item.lowStockThreshold ? 'Low Stock' : 'In Stock';
+      return selectedCols.map(c => {
+        if (c.key === 'status')    return status;
+        if (c.key === 'name')      return `"${item.name}"`;
+        if (c.key === 'createdAt') return item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '';
+        return item[c.key] ?? '';
+      }).join(',');
     }).join('\n');
-    const blob = new Blob([header + rows], { type: 'text/csv' });
+    const blob = new Blob([header + '\n' + rows], { type: 'text/csv' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
     a.download = `inventory-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+    setShowExport(false);
   };
 
   const getStockStatus = (item) => {
@@ -155,7 +158,7 @@ export default function InventoryPage() {
             </>
           ) : (
             <>
-              <button onClick={exportCSV}
+              <button onClick={() => setShowExport(true)}
                 className="border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 px-3 py-2 rounded-xl text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition">
                 📥 {t('common.exportCSV')}
               </button>
@@ -172,8 +175,6 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">{t('inventory.helpText')}</p>
-
       <div className="flex gap-2 mb-5">
         {[
           { key: 'all', label: t('inventory.allItems') },
@@ -182,18 +183,14 @@ export default function InventoryPage() {
         ].map(f => (
           <button key={f.key} onClick={() => setFilter(f.key)}
             className={`px-3 py-1.5 rounded-full text-sm font-medium transition
-              ${filter === f.key
-                ? 'bg-orange-500 text-white'
-                : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
+              ${filter === f.key ? 'bg-orange-500 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
             {f.label}
           </button>
         ))}
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-16 text-gray-400">
-          <span className="animate-spin text-2xl">⏳</span>
-        </div>
+        <div className="flex justify-center py-16"><span className="animate-spin text-2xl">⏳</span></div>
       ) : filteredItems.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-gray-400 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-2xl">
           <span className="text-4xl mb-3">📦</span>
@@ -202,19 +199,10 @@ export default function InventoryPage() {
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          <div className="hidden md:grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wide">
-            <span>{t('inventory.itemName')}</span>
-            <span>{t('inventory.quantity')}</span>
-            <span>{t('inventory.unit')}</span>
-            <span>Status</span>
-            <span></span>
-          </div>
-
           {filteredItems.map(item => {
             const { label, color } = getStockStatus(item);
             return (
-              <div key={item._id}
-                className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 px-4 py-3 shadow-sm">
+              <div key={item._id} className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 px-4 py-3 shadow-sm">
                 {bulkMode ? (
                   <div className="grid grid-cols-[2fr_1fr_1fr] gap-3 items-center">
                     <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{item.name}</span>
@@ -223,16 +211,14 @@ export default function InventoryPage() {
                       <input type="number" min="0" step="0.1"
                         value={bulkEdits[item._id]?.quantity ?? item.quantity}
                         onChange={e => setBulkEdits(b => ({ ...b, [item._id]: { ...b[item._id], quantity: parseFloat(e.target.value) || 0 } }))}
-                        className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400"
-                      />
+                        className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
                     </div>
                     <div>
                       <label className="text-xs text-gray-400 block mb-0.5">{t('inventory.alertWhen')}</label>
                       <input type="number" min="0" step="0.5"
                         value={bulkEdits[item._id]?.lowStockThreshold ?? item.lowStockThreshold}
                         onChange={e => setBulkEdits(b => ({ ...b, [item._id]: { ...b[item._id], lowStockThreshold: parseFloat(e.target.value) || 0 } }))}
-                        className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400"
-                      />
+                        className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400" />
                     </div>
                   </div>
                 ) : (
@@ -247,10 +233,8 @@ export default function InventoryPage() {
                     </div>
                     <span className={`text-xs font-medium px-2.5 py-1 rounded-full shrink-0 ${color}`}>{label}</span>
                     <div className="flex gap-3 shrink-0">
-                      <button onClick={() => openEdit(item)}
-                        className="text-xs text-blue-500 hover:text-blue-700 transition">{t('common.edit')}</button>
-                      <button onClick={() => deleteItem(item._id)}
-                        className="text-xs text-red-400 hover:text-red-600 transition">{t('common.delete')}</button>
+                      <button onClick={() => openEdit(item)} className="text-xs text-blue-500 hover:text-blue-700 transition">{t('common.edit')}</button>
+                      <button onClick={() => deleteItem(item._id)} className="text-xs text-red-400 hover:text-red-600 transition">{t('common.delete')}</button>
                     </div>
                   </div>
                 )}
@@ -260,6 +244,45 @@ export default function InventoryPage() {
         </div>
       )}
 
+      {/* ── Export CSV Modal (#8) ── */}
+      {showExport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-sm shadow-xl">
+            <div className="px-6 pt-5 pb-3 border-b border-gray-100 dark:border-gray-800">
+              <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">📥 Export CSV</h3>
+              <p className="text-xs text-gray-400 mt-1">Select the columns to include</p>
+            </div>
+            <div className="px-6 py-5 flex flex-col gap-3">
+              {CSV_COLUMNS.map(col => (
+                <label key={col.key} className="flex items-center gap-3 cursor-pointer group">
+                  <div
+                    onClick={() => setExportCols(prev => ({ ...prev, [col.key]: !prev[col.key] }))}
+                    className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition shrink-0
+                      ${exportCols[col.key]
+                        ? 'bg-orange-500 border-orange-500'
+                        : 'border-gray-300 dark:border-gray-600 group-hover:border-orange-300'}`}>
+                    {exportCols[col.key] && <span className="text-white text-xs font-bold">✓</span>}
+                  </div>
+                  <span className="text-sm text-gray-700 dark:text-gray-300">{col.label}</span>
+                </label>
+              ))}
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setShowExport(false)}
+                  className="flex-1 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 py-2.5 rounded-xl text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition">
+                  Cancel
+                </button>
+                <button onClick={doExport}
+                  disabled={!Object.values(exportCols).some(Boolean)}
+                  className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white font-semibold py-2.5 rounded-xl text-sm transition">
+                  Export
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Add/Edit Modal ── */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
           <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-sm shadow-xl">
@@ -273,8 +296,7 @@ export default function InventoryPage() {
                 <label className="text-sm text-gray-600 dark:text-gray-400 mb-1.5 block">{t('inventory.itemName')} *</label>
                 <input type="text" value={itemName} onChange={e => setItemName(e.target.value)}
                   placeholder={t('inventory.itemNamePlaceholder')} required autoFocus
-                  className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-                />
+                  className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
               </div>
               <div>
                 <label className="text-sm text-gray-600 dark:text-gray-400 mb-1.5 block">
@@ -282,8 +304,7 @@ export default function InventoryPage() {
                 </label>
                 <input type="number" value={quantity} onChange={e => setQuantity(e.target.value)}
                   min="0" step="0.1" placeholder="e.g. 10"
-                  className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-                />
+                  className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
               </div>
               <div>
                 <label className="text-sm text-gray-600 dark:text-gray-400 mb-1.5 block">{t('inventory.unit')} *</label>
@@ -295,8 +316,7 @@ export default function InventoryPage() {
                 {unit === 'custom' && (
                   <input type="text" value={customUnit} onChange={e => setCustomUnit(e.target.value)}
                     placeholder={t('inventory.unitPlaceholder')} required
-                    className="mt-2 w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-                  />
+                    className="mt-2 w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
                 )}
               </div>
               <div>
@@ -305,8 +325,7 @@ export default function InventoryPage() {
                 </label>
                 <input type="number" value={threshold} onChange={e => setThreshold(e.target.value)}
                   min="0" step="0.5"
-                  className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-                />
+                  className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
               </div>
               <div className="flex gap-3 pt-1">
                 <button type="button" onClick={() => setShowModal(false)}

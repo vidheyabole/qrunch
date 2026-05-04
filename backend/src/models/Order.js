@@ -14,7 +14,7 @@ const orderSchema = new mongoose.Schema({
     selectedModifiers:    [{ groupName: String, optionLabel: String, extraPrice: Number }],
     specialInstructions:  { type: String,  default: '' }
   }],
-  status:        { type: String, enum: ['new', 'preparing', 'ready', 'served'], default: 'new' },
+  status: { type: String, enum: ['new', 'preparing', 'ready', 'completed'], default: 'new' },
   totalAmount:   { type: Number, required: true },
   createdAt:     { type: Date,   default: Date.now }
 });

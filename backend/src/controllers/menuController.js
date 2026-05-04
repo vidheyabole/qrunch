@@ -12,13 +12,11 @@ const verifyOwnership = async (restaurantId, ownerId) => {
   return restaurant;
 };
 
-// Helper — verify staff belongs to this restaurant
 const verifyStaffRestaurant = (req, restaurantId) => {
   if (req.staff && req.staff.restaurant.toString() !== restaurantId.toString())
     throw Object.assign(new Error('Not authorized'), { status: 403 });
 };
 
-// Helper — verify access for either owner or staff
 const verifyAccess = async (req, restaurantId) => {
   if (req.owner) await verifyOwnership(restaurantId, req.owner._id);
   else           verifyStaffRestaurant(req, restaurantId);
@@ -96,7 +94,7 @@ const getItems = async (req, res, next) => {
 
 const addItem = async (req, res, next) => {
   try {
-    const { categoryId, restaurantId, name, description, price, dietaryTags, modifiers, generatedImageUrl } = req.body;
+    const { categoryId, restaurantId, name, description, price, dietaryTags, modifiers, generatedImageUrl, ingredients } = req.body;
 
     if (!name?.trim())  return res.status(400).json({ message: 'Item name is required' });
     if (!categoryId)    return res.status(400).json({ message: 'Category ID is required' });
@@ -124,8 +122,9 @@ const addItem = async (req, res, next) => {
       imagePublicId,
       category:    categoryId,
       restaurant:  restaurantId,
-      dietaryTags: dietaryTags ? JSON.parse(dietaryTags) : [],
-      modifiers:   modifiers   ? JSON.parse(modifiers)   : []
+      dietaryTags:  dietaryTags  ? JSON.parse(dietaryTags)  : [],
+      modifiers:    modifiers    ? JSON.parse(modifiers)    : [],
+      ingredients:  ingredients  ? JSON.parse(ingredients)  : [],
     });
     res.status(201).json(item);
   } catch (err) { next(err); }
@@ -137,11 +136,11 @@ const updateItem = async (req, res, next) => {
     if (!item) return res.status(404).json({ message: 'Item not found' });
     await verifyAccess(req, item.restaurant);
 
-    const { name, description, price, dietaryTags, modifiers, generatedImageUrl } = req.body;
+    const { name, description, price, dietaryTags, modifiers, generatedImageUrl, ingredients } = req.body;
 
     if (req.file) {
       if (item.imagePublicId) await cloudinary.v2.uploader.destroy(item.imagePublicId);
-      const result    = await uploadToCloudinary(req.file.buffer, 'qrunch/menu-items');
+      const result       = await uploadToCloudinary(req.file.buffer, 'qrunch/menu-items');
       item.imageUrl      = result.secure_url;
       item.imagePublicId = result.public_id;
     } else if (generatedImageUrl) {
@@ -152,8 +151,9 @@ const updateItem = async (req, res, next) => {
     if (name)                      item.name        = name.trim();
     if (description !== undefined) item.description = description;
     if (price !== undefined)       item.price       = Number(price);
-    if (dietaryTags) item.dietaryTags = JSON.parse(dietaryTags);
-    if (modifiers)   item.modifiers   = JSON.parse(modifiers);
+    if (dietaryTags)  item.dietaryTags  = JSON.parse(dietaryTags);
+    if (modifiers)    item.modifiers    = JSON.parse(modifiers);
+    if (ingredients)  item.ingredients  = JSON.parse(ingredients);
 
     await item.save();
     res.json(item);

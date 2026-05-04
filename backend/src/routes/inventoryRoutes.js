@@ -5,7 +5,7 @@ const { protectStaff } = require('../middleware/staffAuthMiddleware');
 
 const router = express.Router();
 
-// Accepts owner or staff (manager) token
+// Accepts owner OR any staff token (manager + chef + waiter)
 const protectAny = (req, res, next) => {
   const auth = req.headers.authorization;
   if (!auth?.startsWith('Bearer ')) return res.status(401).json({ message: 'Not authorized' });

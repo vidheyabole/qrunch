@@ -55,7 +55,7 @@ const updateOrderStatus = async (req, res, next) => {
     }
 
     const { status } = req.body;
-    const valid = ['new', 'preparing', 'ready', 'served'];
+    const valid = ['new', 'preparing', 'ready', 'completed'];
     if (!valid.includes(status)) return res.status(400).json({ message: 'Invalid status' });
     order.status = status;
     await order.save();

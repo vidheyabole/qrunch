@@ -170,20 +170,17 @@ export default function ManagerView() {
   const [showPass,   setShowPass]   = useState(null);
   const [saving,     setSaving]     = useState(false);
 
-  // Split bill state
   const [splitSession, setSplitSession] = useState(null);
   const [splitMethod,  setSplitMethod]  = useState('equal');
   const [numPeople,    setNumPeople]    = useState(2);
   const [customAmts,   setCustomAmts]   = useState([]);
   const [showSplit,    setShowSplit]     = useState(false);
 
-  // Staff form
   const [name,     setName]     = useState('');
   const [role,     setRole]     = useState('chef');
   const [language, setLanguage] = useState('en');
   const [password, setPassword] = useState('');
 
-  // ── Inventory state ──────────────────────────────────────────
   const [invItems,     setInvItems]     = useState([]);
   const [invFilter,    setInvFilter]    = useState('all');
   const [invLoading,   setInvLoading]   = useState(false);
@@ -199,7 +196,6 @@ export default function ManagerView() {
   const [invCustomUnit,setInvCustomUnit]= useState('');
   const [invThreshold, setInvThreshold] = useState(5);
 
-  // ── Menu state ───────────────────────────────────────────────
   const [categories,    setCategories]    = useState([]);
   const [menuItems,     setMenuItems]     = useState([]);
   const [activeCat,     setActiveCat]     = useState(null);
@@ -222,6 +218,8 @@ export default function ManagerView() {
   const [genDesc,       setGenDesc]       = useState(false);
   const [genImg,        setGenImg]        = useState(false);
   const [genTags,       setGenTags]       = useState(false);
+  const [mIngredients,    setMIngredients]    = useState('');
+  const [mCustomTagInput, setMCustomTagInput] = useState('');
 
   const lang         = i18n.language || 'en';
   const L            = LABELS[lang] || LABELS.en;
@@ -230,7 +228,6 @@ export default function ManagerView() {
   const currency     = '₹';
   const restaurantId = staff?.restaurant?._id;
 
-  // ── Load functions ───────────────────────────────────────────
   const loadOrders = useCallback(async () => {
     const res  = await fetch(`/api/orders/staff/${restaurantId}`, { headers: authHeader });
     const data = await res.json();
@@ -301,7 +298,9 @@ export default function ManagerView() {
 
   useEffect(() => { loadMenuItems(); }, [loadMenuItems]);
 
+  // ── #14: Confirmation added for 'completed' ──────────────────
   const updateStatus = async (orderId, status) => {
+    if (status === 'completed' && !confirm('Mark this order as completed?')) return;
     await fetch(`/api/orders/staff/${orderId}/status`, {
       method: 'PATCH', headers: { ...authHeader, 'Content-Type': 'application/json' },
       body: JSON.stringify({ status })
@@ -309,7 +308,6 @@ export default function ManagerView() {
     loadOrders(); loadSessions();
   };
 
-  // ── Print Bill ───────────────────────────────────────────────
   const handlePrintBillSession = (session, splitData = null) => {
     const allItems = (session.orders || []).flatMap(o => o.items || []);
     const itemRows = allItems.map(item => {
@@ -339,7 +337,6 @@ export default function ManagerView() {
     iframe.onload = () => { iframe.contentWindow.focus(); iframe.contentWindow.print(); };
   };
 
-  // ── Split Bill ───────────────────────────────────────────────
   const openSplit = (session) => {
     setSplitSession(session); setSplitMethod('equal'); setNumPeople(2);
     setCustomAmts([session.totalAmount/2, session.totalAmount/2]); setShowSplit(true);
@@ -361,7 +358,6 @@ export default function ManagerView() {
   const handleMarkPaid     = async (session,idx) => { await markSplitPaid(session._id,idx,token); loadSessions(); };
   const handleCloseSession = async (session) => { if(!confirm(`Close session for Table ${session.tableNumber}?`))return; await closeSession(session._id,token); loadSessions(); loadTables(); };
 
-  // ── Inventory functions ──────────────────────────────────────
   const invFinalUnit     = invUnit === 'custom' ? invCustomUnit : invUnit;
   const filteredInvItems = invItems.filter(item => {
     if (invFilter === 'out') return item.quantity === 0;
@@ -404,33 +400,40 @@ export default function ManagerView() {
     const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='inventory.csv'; a.click();
   };
 
-  // ── Menu functions ───────────────────────────────────────────
   const visibleMenuItems = menuItems.filter(i => i.category === activeCat || i.category?._id === activeCat);
-  const resetMenuForm    = () => { setMName(''); setMDesc(''); setMPrice(''); setMCatId(activeCat||''); setMAvailable(true); setMTags([]); setMImageFile(null); setMImagePreview(''); setMExistingImg(''); };
+  const resetMenuForm = () => { setMName(''); setMDesc(''); setMPrice(''); setMCatId(activeCat||''); setMAvailable(true); setMTags([]); setMImageFile(null); setMImagePreview(''); setMExistingImg(''); setMIngredients(''); setMCustomTagInput(''); };
   const openAddMenuItem  = () => { resetMenuForm(); setEditMenuItem(null); setShowItemModal(true); };
   const openEditMenuItem = (item) => {
-    setEditMenuItem(item); setMName(item.name); setMDesc(item.description||''); setMPrice(item.price.toString());
-    setMCatId(item.category?._id||item.category||''); setMAvailable(item.isAvailable!==false);
-    setMTags(item.dietaryTags||[]); setMImageFile(null); setMImagePreview(''); setMExistingImg(item.imageUrl||''); setShowItemModal(true);
-  };
+  setEditMenuItem(item); setMName(item.name); setMDesc(item.description||''); setMPrice(item.price.toString());
+  setMCatId(item.category?._id||item.category||''); setMAvailable(item.isAvailable!==false);
+  setMTags(item.dietaryTags||[]); setMImageFile(null); setMImagePreview(''); setMExistingImg(item.imageUrl||'');
+  setMIngredients((item.ingredients||[]).join(', ')); setMCustomTagInput('');
+  setShowItemModal(true);
+};
   const saveMenuItem = async (e) => {
-    e.preventDefault(); if (!mName.trim()||!mPrice||!mCatId) return; setSavingItem(true);
-    const fd = new FormData();
-    fd.append('name',mName); fd.append('description',mDesc); fd.append('price',mPrice);
-    fd.append('categoryId',mCatId); fd.append('restaurantId',restaurantId);
-    fd.append('isAvailable',mAvailable); fd.append('dietaryTags',JSON.stringify(mTags));
-    if (mImageFile) fd.append('image',mImageFile);
-    else if (mExistingImg) fd.append('generatedImageUrl',mExistingImg);
-    const url    = editMenuItem ? `/api/menu/items/${editMenuItem._id}` : '/api/menu/items';
-    const method = editMenuItem ? 'PUT' : 'POST';
-    await fetch(url, { method, headers: authHeader, body: fd });
-    setSavingItem(false); setShowItemModal(false); loadMenuItems();
-  };
+  e.preventDefault(); if (!mName.trim()||!mPrice||!mCatId) return; setSavingItem(true);
+  const fd = new FormData();
+  fd.append('name',mName); fd.append('description',mDesc); fd.append('price',mPrice);
+  fd.append('categoryId',mCatId); fd.append('restaurantId',restaurantId);
+  fd.append('isAvailable',mAvailable); fd.append('dietaryTags',JSON.stringify(mTags));
+  fd.append('ingredients', JSON.stringify(mIngredients.split(',').map(s => s.trim()).filter(Boolean)));
+  if (mImageFile) fd.append('image',mImageFile);
+  else if (mExistingImg) fd.append('generatedImageUrl',mExistingImg);
+  const url    = editMenuItem ? `/api/menu/items/${editMenuItem._id}` : '/api/menu/items';
+  const method = editMenuItem ? 'PUT' : 'POST';
+  await fetch(url, { method, headers: authHeader, body: fd });
+  setSavingItem(false); setShowItemModal(false); loadMenuItems();
+};
   const deleteMenuItem = async (id) => { if(!confirm('Delete this item?'))return; await fetch(`/api/menu/items/${id}`,{method:'DELETE',headers:authHeader}); loadMenuItems(); };
+
+  // ── #14: Confirmation added for availability toggle ──────────
   const toggleMenuAvail = async (item) => {
+    const action = item.isAvailable ? 'mark as unavailable' : 'mark as available';
+    if (!confirm(`Are you sure you want to ${action} "${item.name}"?`)) return;
     setMenuItems(prev=>prev.map(i=>i._id===item._id?{...i,isAvailable:!i.isAvailable}:i));
     await fetch(`/api/menu/items/${item._id}/toggle`,{method:'PATCH',headers:authHeader});
   };
+
   const saveCat = async (e) => {
     e.preventDefault(); if (!catName.trim()) return; setSavingCat(true);
     const url    = editCat ? `/api/menu/categories/${editCat._id}` : '/api/menu/categories';
@@ -462,7 +465,6 @@ export default function ManagerView() {
     setGenTags(false);
   };
 
-  // ── Staff functions ──────────────────────────────────────────
   const resetForm    = () => { setName(''); setRole('chef'); setLanguage('en'); setPassword(''); };
   const openAdd      = () => { resetForm(); setEditMember(null); setShowModal(true); };
   const openEdit     = (s) => { setEditMember(s); setName(s.name); setRole(s.role); setLanguage(s.language||'en'); setPassword(''); setShowModal(true); };
@@ -485,7 +487,6 @@ export default function ManagerView() {
   return (
     <div>
       <iframe ref={iframeRef} style={{ display: 'none' }} title="bill-print-frame" />
-
       <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-5">📊 {L.title}</h1>
 
       {/* KPI Cards */}
@@ -523,8 +524,6 @@ export default function ManagerView() {
       {/* ── Orders Tab ── */}
       {tab === 'orders' && (
         <div className="flex flex-col gap-4">
-
-          {/* ── New Order Table Picker ── */}
           {tables.length > 0 && (
             <div className="flex justify-end">
               <select
@@ -538,7 +537,6 @@ export default function ManagerView() {
               </select>
             </div>
           )}
-
           {activeSessions.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-gray-400 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-2xl">
               <span className="text-4xl mb-3">📋</span><p>{L.noOrders}</p>
@@ -944,6 +942,49 @@ export default function ManagerView() {
                     </button>
                   ))}
                 </div>
+                {/* ── Custom tag input (#2) ── */}
+                <div className="flex gap-2 mt-2">
+                  <input type="text" value={mCustomTagInput} onChange={e => setMCustomTagInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const tag = mCustomTagInput.trim();
+                        if (tag && !mTags.includes(tag)) setMTags(prev => [...prev, tag]);
+                        setMCustomTagInput('');
+                      }
+                    }}
+                    placeholder="Add custom tag… (press Enter)"
+                    className="flex-1 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-orange-400" />
+                  <button type="button"
+                    onClick={() => {
+                      const tag = mCustomTagInput.trim();
+                      if (tag && !mTags.includes(tag)) setMTags(prev => [...prev, tag]);
+                      setMCustomTagInput('');
+                    }}
+                    className="text-xs bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-xl transition font-medium">
+                    + Add
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {mTags.filter(t => !DIETARY_OPTIONS.includes(t)).map(tag => (
+                    <span key={tag} className="inline-flex items-center gap-1 text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 px-2.5 py-1 rounded-full">
+                      {tag}
+                      <button type="button" onClick={() => setMTags(prev => prev.filter(t => t !== tag))} className="hover:text-red-500 transition">✕</button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── Ingredients (#4) ── */}
+              <div>
+                <label className="text-sm text-gray-600 dark:text-gray-400 mb-1.5 block">
+                  Ingredients
+                  <span className="text-xs text-gray-400 ml-1">(optional, comma-separated)</span>
+                </label>
+                <textarea value={mIngredients} onChange={e => setMIngredients(e.target.value)}
+                  rows={2} placeholder="e.g. Paneer, Tomato, Onion, Spices..."
+                  className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 resize-none" />
+                <p className="text-xs text-gray-400 mt-1">Customers can view this on the menu</p>
               </div>
               <label className="flex items-center justify-between bg-gray-50 dark:bg-gray-800 rounded-xl px-4 py-3 cursor-pointer">
                 <span className="text-sm text-gray-700 dark:text-gray-300">{L.available}</span>

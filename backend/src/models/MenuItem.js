@@ -11,6 +11,7 @@ const menuItemSchema = new mongoose.Schema({
   isAvailable:   { type: Boolean, default: true },
   stock:         { type: Number,  default: null },
   dietaryTags:   [{ type: String }],
+  ingredients:   [{ type: String }],
   modifiers: [{
     groupName: { type: String },
     options:   [{ label: { type: String }, extraPrice: { type: Number, default: 0 } }]

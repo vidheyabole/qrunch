@@ -201,6 +201,16 @@ export default function WaiterView() {
     loadData();
   };
 
+  const updateStatus = async (orderId, status) => {
+    if (status === 'completed' && !confirm('Mark this order as completed?')) return;
+    await fetch(`/api/orders/staff/${orderId}/status`, {
+      method: 'PATCH',
+      headers: { ...authHeader, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    loadData();
+  };
+
   const handleCloseSession = async (session) => {
     if (!confirm(`Close session for Table ${session.tableNumber}?`)) return;
     await closeSession(session._id, token);
@@ -246,10 +256,19 @@ export default function WaiterView() {
               <div className="px-4 py-3">
                 {(session.orders || []).map((order, oi) => (
                   <div key={order._id || oi} className="mb-3">
-                    <p className="text-xs text-gray-400 font-medium mb-1">
-                      Order {oi + 1} · {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      {order.customerName && ` · ${order.customerName}`}
-                    </p>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs text-gray-400 font-medium">
+                        Order {oi + 1} · {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {order.customerName && ` · ${order.customerName}`}
+                      </p>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full
+                        ${order.status === 'new'       ? 'bg-red-100    text-red-600    dark:bg-red-900/20    dark:text-red-400'    :
+                          order.status === 'preparing' ? 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/20 dark:text-yellow-400' :
+                          order.status === 'ready'     ? 'bg-green-100  text-green-600  dark:bg-green-900/20  dark:text-green-400'  :
+                                                         'bg-gray-100   text-gray-500   dark:bg-gray-800      dark:text-gray-400'}`}>
+                        {L[order.status]}
+                      </span>
+                    </div>
                     {(order.items || []).map((item, i) => {
                       const qty = item.quantity || item.qty || 1;
                       return (
@@ -259,6 +278,26 @@ export default function WaiterView() {
                         </div>
                       );
                     })}
+                    <div className="flex gap-2 mt-2 pl-2">
+                      {order.status === 'new' && (
+                        <button onClick={() => updateStatus(order._id, 'preparing')}
+                          className="text-xs bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1.5 rounded-lg transition font-medium">
+                          🍳 {L.preparing}
+                        </button>
+                      )}
+                      {order.status === 'preparing' && (
+                        <button onClick={() => updateStatus(order._id, 'ready')}
+                          className="text-xs bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg transition font-medium">
+                          🔔 {L.ready}
+                        </button>
+                      )}
+                      {order.status === 'ready' && (
+                        <button onClick={() => updateStatus(order._id, 'completed')}
+                          className="text-xs bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg transition font-medium">
+                          ✅ {L.completed}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
 

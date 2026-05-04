@@ -20,6 +20,7 @@ import StaffDashboard from './pages/staff/StaffDashboard';
 import StaffPage from './pages/dashboard/StaffPage';
 import StaffOrderPage from './pages/staff/StaffOrderPage';
 import ProfilePage from './pages/dashboard/ProfilePage';
+import OrderTrackerPage from './pages/customer/OrderTrackerPage';
 
 const PrivateRoute = ({ children }) => {
   const { owner, loading } = useAuth();
@@ -54,6 +55,7 @@ export default function App() {
       <Route path="/order/:restaurantId/:tableId/menu"                  element={<CustomerMenuPage />} />
       <Route path="/order/:restaurantId/:tableId/cart"                  element={<CartPage />} />
       <Route path="/order/:restaurantId/:tableId/confirmed/:orderId"    element={<OrderConfirmationPage />} />
+      <Route path="/order/:restaurantId/:tableId/track"                 element={<OrderTrackerPage />} />
 
       <Route path="*" element={<Navigate to="/login" />} />
     </Routes>

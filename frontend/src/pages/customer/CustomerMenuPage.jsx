@@ -4,30 +4,34 @@ import { useTranslation } from 'react-i18next';
 import { useCart } from '../../context/CartContext';
 import { getPublicMenu, getRecommendations } from '../../api/customerApi';
 import LanguageSelector from '../../components/common/LanguageSelector';
-import { requestBill } from '../../api/sessionApi';
+import { requestBill, getActiveSession } from '../../api/sessionApi';
 import { useTheme } from '../../hooks/useTheme';
 
 export default function CustomerMenuPage() {
   const { restaurantId, tableId } = useParams();
-  const navigate    = useNavigate();
-  const location    = useLocation();
+  const navigate = useNavigate();
+  const location = useLocation();
   const { t, i18n } = useTranslation();
   const { cartItems, addToCart } = useCart();
   const { dark, toggleTheme } = useTheme();
 
-  const [restaurant,   setRestaurant]   = useState(null);
-  const [categories,   setCategories]   = useState([]);
-  const [items,        setItems]        = useState([]);
-  const [loading,      setLoading]      = useState(true);
-  const [lang,         setLang]         = useState(localStorage.getItem('qrunch_ui_lang') || 'en');
-  const [activeTab,    setActiveTab]    = useState('all');
-  const [selectedItem, setSelectedItem] = useState(null);
-  const [qty,          setQty]          = useState(1);
-  const [selectedMods, setSelectedMods] = useState({});
-  const [specialNote,  setSpecialNote]  = useState('');
-  const [recs,         setRecs]         = useState([]);
-  const [billRequested,setBillRequested]= useState(false);
-  const [requesting,   setRequesting]   = useState(false);
+  const [hasActiveSession, setHasActiveSession] = useState(false);
+  const [restaurant,       setRestaurant]        = useState(null);
+  const [categories,       setCategories]        = useState([]);
+  const [items,            setItems]             = useState([]);
+  const [loading,          setLoading]           = useState(true);
+  const [lang,             setLang]              = useState(localStorage.getItem('qrunch_ui_lang') || 'en');
+  const [activeTab,        setActiveTab]         = useState('all');
+  const [selectedItem,     setSelectedItem]      = useState(null);
+  const [qty,              setQty]               = useState(1);
+  const [selectedMods,     setSelectedMods]      = useState({});
+  const [specialNote,      setSpecialNote]       = useState('');
+  const [recs,             setRecs]              = useState([]);
+  const [billRequested,    setBillRequested]     = useState(false);
+  const [requesting,       setRequesting]        = useState(false);
+  const [allergyDismissed, setAllergyDismissed]  = useState(
+    () => sessionStorage.getItem('qrunch_allergy_dismissed') === 'true'
+  );
 
   const customerName = location.state?.name || '';
   const currency     = restaurant?.region === 'india' ? '₹' : '$';
@@ -39,6 +43,12 @@ export default function CustomerMenuPage() {
       setRestaurant(data.restaurant);
       setCategories(data.categories);
       setItems(data.items);
+      if (data.restaurant?.name) {
+        localStorage.setItem(`qrunch_restaurant_${restaurantId}`, data.restaurant.name);
+      }
+      // ── Check for active session ──
+      const session = await getActiveSession(restaurantId, tableId).catch(() => null);
+      if (session && session.status !== 'closed') setHasActiveSession(true);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   }, [restaurantId, tableId, lang]);
@@ -78,6 +88,11 @@ export default function CustomerMenuPage() {
     setRequesting(false);
   };
 
+  const dismissAllergy = () => {
+    sessionStorage.setItem('qrunch_allergy_dismissed', 'true');
+    setAllergyDismissed(true);
+  };
+
   const cartCount = cartItems.reduce((s, i) => s + i.qty, 0);
 
   if (loading) return (
@@ -105,13 +120,18 @@ export default function CustomerMenuPage() {
             {customerName && <p className="text-xs text-gray-400">{t('customer.welcomeBack')}, {customerName}</p>}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {/* Dark mode toggle */}
             <button onClick={toggleTheme}
               className="p-1.5 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition text-base">
               {dark ? '☀️' : '🌙'}
             </button>
             <LanguageSelector variant="compact" onSelect={(code) => { setLang(code); i18n.changeLanguage(code); }} />
-            {/* Request Bill */}
+            {/* ── Track My Order button ── */}
+            {hasActiveSession && (
+              <button onClick={() => navigate(`/order/${restaurantId}/${tableId}/track`)}
+                className="text-xs font-semibold px-3 py-1.5 rounded-xl transition bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 active:scale-95">
+                📍 My Order
+              </button>
+            )}
             <button onClick={handleRequestBill} disabled={billRequested || requesting}
               className={`text-xs font-semibold px-3 py-1.5 rounded-xl transition
                 ${billRequested
@@ -143,6 +163,27 @@ export default function CustomerMenuPage() {
           ))}
         </div>
       </div>
+
+      {/* ── Allergy Banner ── */}
+      {!allergyDismissed && (
+        <div className="max-w-2xl mx-auto px-4 pt-4">
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl px-4 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-lg shrink-0">⚠️</span>
+              <p className="text-sm text-amber-800 dark:text-amber-300 font-medium">
+                Do you have any allergies?
+                <span className="font-normal text-amber-700 dark:text-amber-400 ml-1">
+                  Add a note when placing your order to let the kitchen know.
+                </span>
+              </p>
+            </div>
+            <button onClick={dismissAllergy}
+              className="text-amber-500 hover:text-amber-700 dark:text-amber-400 text-lg shrink-0 transition">
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Items grid */}
       <div className="max-w-2xl mx-auto px-4 py-4 grid grid-cols-2 gap-3 pb-32">
@@ -197,6 +238,19 @@ export default function CustomerMenuPage() {
               <p className="text-sm text-gray-500 mt-1">{selectedItem.description}</p>
               <p className="text-lg font-bold text-orange-500 mt-2">{currency}{selectedItem.price.toFixed(2)}</p>
 
+              {/* Ingredients */}
+              {selectedItem.ingredients?.length > 0 && (
+                <details className="mt-3">
+                  <summary className="text-sm font-medium text-gray-600 dark:text-gray-400 cursor-pointer hover:text-orange-500 transition list-none flex items-center gap-1">
+                    <span>🥬</span> View Ingredients
+                  </summary>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 bg-gray-50 dark:bg-gray-800 rounded-xl px-3 py-2 leading-relaxed">
+                    {selectedItem.ingredients.join(', ')}
+                  </p>
+                </details>
+              )}
+
+              {/* Dietary tags */}
               {selectedItem.dietaryTags?.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-3">
                   {selectedItem.dietaryTags.map(tag => (
@@ -205,6 +259,7 @@ export default function CustomerMenuPage() {
                 </div>
               )}
 
+              {/* Modifiers */}
               {selectedItem.modifiers?.map((group, gi) => (
                 <div key={gi} className="mt-4">
                   <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{group.groupName}</p>
@@ -225,13 +280,15 @@ export default function CustomerMenuPage() {
                 </div>
               ))}
 
+              {/* Special instructions */}
               <div className="mt-4">
                 <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">{t('customer.specialInstructions')}</p>
                 <textarea value={specialNote} onChange={e => setSpecialNote(e.target.value)}
-                  rows={2} placeholder="e.g. No onions, extra spicy..."
+                  rows={2} placeholder="e.g. No onions, extra spicy, allergic to nuts..."
                   className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 resize-none" />
               </div>
 
+              {/* AI Recommendations */}
               {recs.length > 0 && (
                 <div className="mt-4">
                   <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{t('customer.goesWith')}</p>
@@ -248,6 +305,7 @@ export default function CustomerMenuPage() {
                 </div>
               )}
 
+              {/* Qty + Add to cart */}
               <div className="flex gap-3 mt-5">
                 <div className="flex items-center gap-3 bg-gray-100 dark:bg-gray-800 rounded-xl px-3 py-2">
                   <button onClick={() => setQty(q => Math.max(1, q - 1))} className="text-lg font-bold w-6 flex items-center justify-center">−</button>

@@ -6,9 +6,12 @@ export const getActiveSession = async (restaurantId, tableId) => {
   return res.json();
 };
 
-export const requestBill = async (restaurantId, tableId) => {
+// ── Updated: paymentMethod param added ──────────────────────
+export const requestBill = async (restaurantId, tableId, paymentMethod = '') => {
   const res = await fetch(`${BASE}/request-bill/${restaurantId}/${tableId}`, {
-    method: 'POST'
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ paymentMethod })
   });
   if (!res.ok) throw new Error('Failed to request bill');
   return res.json();

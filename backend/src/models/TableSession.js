@@ -15,7 +15,9 @@ const tablSessionSchema = new mongoose.Schema({
     paid:   { type: Boolean, default: false }
   }],
   openedAt: { type: Date, default: Date.now },
-  closedAt: { type: Date }
+  closedAt: { type: Date },
+  
+  paymentMethod: { type: String, enum: ['cash', 'upi', 'card', 'other', ''], default: '' },
 });
 
 module.exports = mongoose.model('TableSession', tablSessionSchema);
