@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useStaffAuth } from '../../hooks/useStaffAuth';
 import { useTheme } from '../../hooks/useTheme';
+import { Link } from 'react-router-dom';
 import FeedbackForm from '../../components/common/FeedbackForm';
 import i18n from '../../i18n';
 
@@ -65,6 +66,14 @@ export default function StaffLayout({ children }) {
               </button>
             ))}
           </div>
+
+          {/* Receipts link — managers only */}
+          {staff?.role === 'manager' && (
+            <Link to="/staff/receipts"
+              className="text-xs text-gray-400 hover:text-orange-500 transition px-2 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 hidden sm:block">
+              🧾 Receipts
+            </Link>
+          )}
 
           {/* Feedback button */}
           <button onClick={() => setShowFeedback(true)}

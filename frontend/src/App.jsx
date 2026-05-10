@@ -21,6 +21,8 @@ import StaffPage from './pages/dashboard/StaffPage';
 import StaffOrderPage from './pages/staff/StaffOrderPage';
 import ProfilePage from './pages/dashboard/ProfilePage';
 import OrderTrackerPage from './pages/customer/OrderTrackerPage';
+import StaffReceiptsPage from './pages/staff/StaffReceiptsPage';
+import SuperAdminPage from './pages/superadmin/SuperAdminPage';
 
 const PrivateRoute = ({ children }) => {
   const { owner, loading } = useAuth();
@@ -36,10 +38,14 @@ export default function App() {
       <Route path="/auth/google/callback"    element={<GoogleCallbackPage />} />
       <Route path="/dashboard/profile" element={<PrivateRoute><ProfilePage /></PrivateRoute>} />
 
+      {/* Super Admin */}
+      <Route path="/superadmin" element={<SuperAdminPage />} />
+
       {/* Staff routes */}
       <Route path="/staff/login"             element={<StaffLoginPage />} />
       <Route path="/staff"                   element={<StaffDashboard />} />
       <Route path="/staff/order/:tableId"    element={<StaffOrderPage />} />
+      <Route path="/staff/receipts" element={<StaffReceiptsPage />} />
 
       {/* Owner routes */}
       <Route path="/dashboard/staff"         element={<PrivateRoute><StaffPage /></PrivateRoute>} />
