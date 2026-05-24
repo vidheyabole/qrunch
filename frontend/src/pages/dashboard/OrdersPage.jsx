@@ -10,6 +10,7 @@ const STATUS_CONFIG = {
   preparing: { label: 'Preparing', color: 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400', dot: 'bg-orange-500', next: 'ready',     nextLabel: 'Mark Ready'      },
   ready:     { label: 'Ready',     color: 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400',   dot: 'bg-green-500',  next: 'completed', nextLabel: 'Mark Completed'  },
   completed: { label: 'Completed', color: 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400',          dot: 'bg-gray-400',   next: null,        nextLabel: null              },
+  served:    { label: 'Served',    color: 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400',          dot: 'bg-gray-400',   next: null,        nextLabel: null              },
 };
 
 const TABS = [
@@ -120,37 +121,36 @@ const printReceipt = (order, restaurantName, currency) => {
 
 // ── Receipts Tab Component ────────────────────────────────
 function ReceiptsTab({ restaurantId, token, currency, restaurantName }) {
-  const [receipts,    setReceipts]    = useState([]);
-  const [loading,     setLoading]     = useState(true);
-  const [summary,     setSummary]     = useState(null);
-  const [pagination,  setPagination]  = useState(null);
-  const [page,        setPage]        = useState(1);
-  const [expandedId,  setExpandedId]  = useState(null);
+  const [receipts,   setReceipts]   = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [summary,    setSummary]    = useState(null);
+  const [pagination, setPagination] = useState(null);
+  const [page,       setPage]       = useState(1);
+  const [expandedId, setExpandedId] = useState(null);
 
-  // Filters
-  const [dateFrom,       setDateFrom]       = useState('');
-  const [dateTo,         setDateTo]         = useState('');
-  const [statusFilter,   setStatusFilter]   = useState('all');
-  const [tableFilter,    setTableFilter]    = useState('');
-  const [searchQuery,    setSearchQuery]    = useState('');
+  const [dateFrom,     setDateFrom]     = useState('');
+  const [dateTo,       setDateTo]       = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [tableFilter,  setTableFilter]  = useState('');
+  const [searchQuery,  setSearchQuery]  = useState('');
 
   const fetchReceipts = useCallback(async (p = 1) => {
     if (!restaurantId) return;
     setLoading(true);
     try {
       const params = new URLSearchParams({ page: p, limit: 20 });
-      if (dateFrom)                    params.append('from',   dateFrom);
-      if (dateTo)                      params.append('to',     dateTo);
-      if (statusFilter !== 'all')      params.append('status', statusFilter);
-      if (tableFilter.trim())          params.append('table',  tableFilter.trim());
-      if (searchQuery.trim())          params.append('search', searchQuery.trim());
+      if (dateFrom)               params.append('from',   dateFrom);
+      if (dateTo)                 params.append('to',     dateTo);
+      if (statusFilter !== 'all') params.append('status', statusFilter);
+      if (tableFilter.trim())     params.append('table',  tableFilter.trim());
+      if (searchQuery.trim())     params.append('search', searchQuery.trim());
 
       const res  = await fetch(`/api/orders/${restaurantId}/receipts?${params}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
-      setReceipts(data.orders   || []);
-      setSummary(data.summary   || null);
+      setReceipts(data.orders      || []);
+      setSummary(data.summary      || null);
       setPagination(data.pagination || null);
       setPage(p);
     } catch (err) { console.error(err); }
@@ -160,7 +160,6 @@ function ReceiptsTab({ restaurantId, token, currency, restaurantName }) {
   useEffect(() => { fetchReceipts(1); }, [fetchReceipts]);
 
   const handleSearch = (e) => { e.preventDefault(); fetchReceipts(1); };
-
   const clearFilters = () => {
     setDateFrom(''); setDateTo('');
     setStatusFilter('all'); setTableFilter(''); setSearchQuery('');
@@ -168,13 +167,12 @@ function ReceiptsTab({ restaurantId, token, currency, restaurantName }) {
 
   return (
     <div>
-      {/* ── Summary Cards ── */}
       {summary && (
         <div className="grid grid-cols-3 gap-3 mb-5">
           {[
-            { label: 'Total Orders',  value: summary.totalOrders,                          color: 'text-gray-800 dark:text-gray-100' },
+            { label: 'Total Orders',  value: summary.totalOrders,                             color: 'text-gray-800 dark:text-gray-100' },
             { label: 'Total Revenue', value: `${currency}${summary.totalRevenue.toFixed(2)}`, color: 'text-orange-500' },
-            { label: 'Total Items',   value: summary.totalItems,                            color: 'text-blue-500' },
+            { label: 'Total Items',   value: summary.totalItems,                              color: 'text-blue-500'   },
           ].map(({ label, value, color }) => (
             <div key={label} className="bg-white dark:bg-gray-900 rounded-2xl p-4 border border-gray-100 dark:border-gray-800 shadow-sm text-center">
               <p className="text-xs text-gray-400 mb-1">{label}</p>
@@ -184,22 +182,18 @@ function ReceiptsTab({ restaurantId, token, currency, restaurantName }) {
         </div>
       )}
 
-      {/* ── Filters ── */}
       <form onSubmit={handleSearch} className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-4 mb-5 shadow-sm">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
-          {/* Date from */}
           <div>
             <label className="text-xs text-gray-400 mb-1 block">From Date</label>
             <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
               className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
           </div>
-          {/* Date to */}
           <div>
             <label className="text-xs text-gray-400 mb-1 block">To Date</label>
             <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
               className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
           </div>
-          {/* Status */}
           <div>
             <label className="text-xs text-gray-400 mb-1 block">Status</label>
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
@@ -211,14 +205,12 @@ function ReceiptsTab({ restaurantId, token, currency, restaurantName }) {
               <option value="completed">Completed</option>
             </select>
           </div>
-          {/* Table number */}
           <div>
             <label className="text-xs text-gray-400 mb-1 block">Table Number</label>
             <input type="number" value={tableFilter} onChange={e => setTableFilter(e.target.value)}
               placeholder="e.g. 3"
               className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
           </div>
-          {/* Customer search */}
           <div className="sm:col-span-2">
             <label className="text-xs text-gray-400 mb-1 block">Search Customer (name or phone)</label>
             <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
@@ -238,7 +230,6 @@ function ReceiptsTab({ restaurantId, token, currency, restaurantName }) {
         </div>
       </form>
 
-      {/* ── Results ── */}
       {loading ? (
         <div className="flex justify-center py-16">
           <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
@@ -257,8 +248,6 @@ function ReceiptsTab({ restaurantId, token, currency, restaurantName }) {
             return (
               <div key={order._id}
                 className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-
-                {/* Header row */}
                 <div className="p-4 flex items-center gap-3 cursor-pointer"
                   onClick={() => setExpandedId(isExpanded ? null : order._id)}>
                   <div className="w-12 h-12 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center shrink-0 font-bold text-gray-600 dark:text-gray-300 text-sm">
@@ -287,18 +276,14 @@ function ReceiptsTab({ restaurantId, token, currency, restaurantName }) {
                   </div>
                 </div>
 
-                {/* Expanded receipt details */}
                 {isExpanded && (
                   <div className="px-4 pb-4 border-t border-gray-100 dark:border-gray-800 pt-3">
-                    {/* Customer info */}
                     {(order.customerName || order.customerPhone) && (
                       <div className="bg-gray-50 dark:bg-gray-800 rounded-xl px-3 py-2.5 mb-3 flex gap-4 flex-wrap">
                         {order.customerName  && <p className="text-xs text-gray-500 dark:text-gray-400">👤 {order.customerName}</p>}
                         {order.customerPhone && <p className="text-xs text-gray-500 dark:text-gray-400">📱 {order.customerPhone}</p>}
                       </div>
                     )}
-
-                    {/* Items */}
                     <div className="flex flex-col gap-2 mb-4">
                       {order.items.map((item, i) => {
                         const qty   = item.quantity || 1;
@@ -324,16 +309,11 @@ function ReceiptsTab({ restaurantId, token, currency, restaurantName }) {
                         );
                       })}
                     </div>
-
-                    {/* Total */}
                     <div className="flex justify-between items-center py-2.5 border-t border-gray-100 dark:border-gray-800 mb-4">
                       <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Total</span>
                       <span className="text-lg font-bold text-orange-500">{currency}{(order.totalAmount || 0).toFixed(2)}</span>
                     </div>
-
-                    {/* Print button */}
-                    <button
-                      onClick={() => printReceipt(order, restaurantName, currency)}
+                    <button onClick={() => printReceipt(order, restaurantName, currency)}
                       className="w-full flex items-center justify-center gap-2 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 py-2.5 rounded-xl text-sm font-medium transition">
                       🖨️ Print Receipt
                     </button>
@@ -345,16 +325,13 @@ function ReceiptsTab({ restaurantId, token, currency, restaurantName }) {
         </div>
       )}
 
-      {/* ── Pagination ── */}
       {pagination && pagination.totalPages > 1 && (
         <div className="flex items-center justify-center gap-3 mt-6">
           <button onClick={() => fetchReceipts(page - 1)} disabled={page <= 1}
             className="px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-sm text-gray-600 dark:text-gray-400 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
             ← Prev
           </button>
-          <span className="text-sm text-gray-500">
-            Page {page} of {pagination.totalPages}
-          </span>
+          <span className="text-sm text-gray-500">Page {page} of {pagination.totalPages}</span>
           <button onClick={() => fetchReceipts(page + 1)} disabled={page >= pagination.totalPages}
             className="px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-sm text-gray-600 dark:text-gray-400 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
             Next →
@@ -438,7 +415,7 @@ export default function OrdersPage() {
     try {
       const updated = await updateOrderStatus(order._id, newStatus, token);
       setOrders(prev => prev.map(o => o._id === updated._id ? updated : o));
-      toast.success(`Order marked as ${STATUS_CONFIG[newStatus].label}`);
+      toast.success(`Order marked as ${STATUS_CONFIG[newStatus]?.label || newStatus}`);
     } catch { toast.error('Failed to update order status'); }
   };
 
@@ -487,7 +464,6 @@ export default function OrdersPage() {
         )}
       </div>
 
-      {/* Auto-print banner */}
       {autoPrint && activeTab !== 'receipts' && (
         <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl p-3 mb-5 flex items-center gap-2">
           <span>🖨️</span>
@@ -548,7 +524,7 @@ export default function OrdersPage() {
       ) : (
         <div className="flex flex-col gap-3">
           {filteredOrders.map(order => {
-            const st         = STATUS_CONFIG[order.status];
+            const st         = STATUS_CONFIG[order.status] || STATUS_CONFIG.completed;
             const isExpanded = expandedId === order._id;
             return (
               <div key={order._id}
@@ -642,13 +618,13 @@ export default function OrdersPage() {
                           {st.nextLabel}
                         </button>
                       )}
-                      {order.status !== 'new' && order.status !== 'completed' && (
+                      {order.status !== 'new' && order.status !== 'completed' && order.status !== 'served' && (
                         <button onClick={() => handleStatusUpdate(order, 'new')}
                           className="px-4 py-2.5 rounded-xl text-sm border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
                           ↩ Revert
                         </button>
                       )}
-                      {order.status === 'completed' && (
+                      {(order.status === 'completed' || order.status === 'served') && (
                         <div className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-gray-100 dark:bg-gray-800 text-gray-400 text-center">
                           ✅ Completed
                         </div>
